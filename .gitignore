@@ -4,6 +4,7 @@ agent/auth.json
 # Contains provider configurations and potentially API keys
 agent/models.json
 agent/settings.json
+agent/npm
 
 # === Personal Data & History ===
 # Project-specific interaction history
@@ -25,4 +26,4 @@ nul
 agent/skills/
 agent/extensions/commandcode-provider/
 agent/skills/
-.commandcode/
+.commandcode/i
