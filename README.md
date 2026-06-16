@@ -2,7 +2,7 @@
 
 This repository contains a powerful, modular collection of extensions for the Pi Agent. Each extension is designed to be fully self-contained while seamlessly integrating with the agent to provide enhanced capabilities, rich UI components, and advanced background orchestrations.
 
-## 🌟 Extension Features
+## Extension Features
 
 ### UI & Presentation
 * **BetterUI** (`betterui/`): Provides compact, tree-style tool renderers for commands (bash, read, write, edit, etc.) and improves custom user-message appearance.
@@ -51,7 +51,7 @@ npx skills add obra/superpowers
 
 ---
 
-## 🏗️ Architecture & Modular Design
+## Architecture & Modular Design
 
 The extension system is designed to be robust and plug-and-play:
 
@@ -60,7 +60,7 @@ The extension system is designed to be robust and plug-and-play:
 3. **LLM Awareness**: Using the Feature Registration Pattern, each extension injects its capabilities (tools, commands, descriptions) into `globalThis.__pi_extension_features`. The agent automatically compiles this into the system prompt, so the LLM is always aware of what extensions are loaded.
 4. **Shared UI Primitives**: Extensions independently register UI components using context APIs (`ctx.ui.setHeader`, `ctx.ui.setFooter`, `ctx.ui.setWidget`), ensuring the interface remains composable.
 
-## 🚀 Adding a New Extension
+## Adding a New Extension
 
 1. Create a new folder `extensions/<name>/`
 2. Add an `index.ts` with a `default export` that receives `pi: ExtensionAPI`.
@@ -76,3 +76,7 @@ The extension system is designed to be robust and plug-and-play:
    }
    ```
 4. If your extension requires external `npm` dependencies, configure `"pi": { "extensions": ["./index.ts"] }` in a local `package.json` and run `npm install`.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
