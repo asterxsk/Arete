@@ -1,12 +1,13 @@
 /**
  * spinner-phrases — animated star spinner with orange glow effect and fun phrases.
  *
- * Replaces the default "working..." indicator with a rotating star that has
- * an orange glow, cycles through Claude Code–style gerund phrases, and shows
- * elapsed time: "✦ Manifesting (1m 2s)"
+ * Replaces the default "Working..." indicator (shown via the pi core's built-in
+ * loadingAnimation) with a rotating star that has an orange glow, cycles through
+ * Claude Code–style gerund phrases, and shows elapsed time:
+ *   "✦ Manifesting (1m 2s)"
  *
- * Sets `globalThis.__pi_spinner_text` which the `todos/` extension widget reads
- * to render the spinner above the input area.
+ * Uses `ctx.ui.setWorkingMessage()` to update the pi core's working indicator,
+ * and also sets `globalThis.__pi_spinner_text` for the `todos/` widget.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -17,25 +18,25 @@ const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 
 // Orange glow palette
-const GLOW_BRIGHT  = "\x1b[38;2;255;200;80m";   // bright orange-gold (center glow)
-const GLOW_ORANGE  = "\x1b[38;2;255;165;0m";    // main orange
-const GLOW_DIM     = "\x1b[38;2;200;120;30m";   // dimmed orange (time)
-const GLOW_GOLD    = "\x1b[38;2;255;220;120m";   // bold bright gold (star peak)
+const ORANGE_GLOW_BRIGHT = "\x1b[38;2;255;200;80m";
+const ORANGE_GLOW_MAIN   = "\x1b[38;2;255;165;0m";
+const ORANGE_GLOW_DIM    = "\x1b[38;2;200;120;30m";
+const ORANGE_GLOW_GOLD   = "\x1b[38;2;255;220;120m";
 
 // ── Star spinner frames ───────────────────────────────────────────
 
 const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "⋆", "☆"];
 
-// Each frame gets a colour treatment (some frames brighter for "glow" pulse)
+// Each frame gets a colour treatment (some brighter for "glow" pulse)
 const STAR_COLORS: string[] = [
-	GLOW_GOLD,     // ✦ — bright gold
-	GLOW_BRIGHT,   // ✧ — bright orange
-	GLOW_ORANGE,   // ★ — main orange
-	GLOW_BRIGHT,   // ✧ — bright orange
-	GLOW_GOLD,     // ✦ — bright gold
-	GLOW_DIM,      // ☆ — dimmed
-	GLOW_BRIGHT,   // ⋆ — bright
-	GLOW_DIM,      // ☆ — dimmed
+	ORANGE_GLOW_GOLD,   // ✦ — bright gold
+	ORANGE_GLOW_BRIGHT, // ✧ — bright orange
+	ORANGE_GLOW_MAIN,   // ★ — main orange
+	ORANGE_GLOW_BRIGHT, // ✧ — bright orange
+	ORANGE_GLOW_GOLD,   // ✦ — bright gold
+	ORANGE_GLOW_DIM,    // ☆ — dimmed
+	ORANGE_GLOW_BRIGHT, // ⋆ — bright
+	ORANGE_GLOW_DIM,    // ☆ — dimmed
 ];
 
 // ── Fun phrases (Claude Code–inspired gerunds) ─────────────────────
@@ -185,6 +186,7 @@ let startTime = 0;
 let phraseIndex = 0;
 let frameIndex = 0;
 let tickCount = 0;
+let currentCtx: any = null;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -224,17 +226,24 @@ function updateSpinner(): void {
 	// Build the glow-effect string
 	//   ★ Manifesting (1m 2s)
 	// Star gets bright glow, phrase is orange, time is dimmed
-	const text = `${star} ${GLOW_ORANGE}${phrase}${RESET} ${GLOW_DIM}(${timeStr})${RESET}`;
+	const text = `${star} ${ORANGE_GLOW_MAIN}${phrase}${RESET} ${ORANGE_GLOW_DIM}(${timeStr})${RESET}`;
 
+	// Update the todos widget bridge
 	(globalThis as any).__pi_spinner_text = text;
+
+	// Update the pi core's working indicator (this is what actually shows "Working...")
+	if (currentCtx?.hasUI) {
+		currentCtx.ui.setWorkingMessage(text);
+	}
 
 	frameIndex++;
 	tickCount++;
 }
 
-function startSpinner(): void {
+function startSpinner(ctx: any): void {
 	// Clear any previous interval to prevent duplicates
 	stopSpinner();
+	currentCtx = ctx;
 	startTime = Date.now();
 	phraseIndex = Math.floor(Math.random() * PHRASES.length);
 	frameIndex = 0;
@@ -248,7 +257,13 @@ function stopSpinner(): void {
 		clearInterval(intervalId);
 		intervalId = null;
 	}
+	// Reset the pi core's working indicator to default
+	if (currentCtx?.hasUI) {
+		// Passing undefined restores the default "Working..." message
+		currentCtx.ui.setWorkingMessage(undefined);
+	}
 	(globalThis as any).__pi_spinner_text = "";
+	currentCtx = null;
 }
 
 // ── Extension entry ────────────────────────────────────────────────
@@ -260,8 +275,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Start spinner when the agent begins processing
-	pi.on("before_agent_start", async () => {
-		startSpinner();
+	pi.on("before_agent_start", async (_event: any, ctx: any) => {
+		startSpinner(ctx);
 	});
 
 	// Stop spinner when the message is complete
