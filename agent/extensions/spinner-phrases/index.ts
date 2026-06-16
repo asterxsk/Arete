@@ -258,12 +258,13 @@ function stopSpinner(): void {
 		intervalId = null;
 	}
 	// Reset the pi core's working indicator to default
+	// (Passing undefined restores the default "Working..." message)
 	if (currentCtx?.hasUI) {
-		// Passing undefined restores the default "Working..." message
 		currentCtx.ui.setWorkingMessage(undefined);
 	}
 	(globalThis as any).__pi_spinner_text = "";
-	currentCtx = null;
+	// Keep currentCtx alive — it's reused across before_agent_start calls within the same session.
+	// session_start will update it when the session changes.
 }
 
 // ── Extension entry ────────────────────────────────────────────────
@@ -274,9 +275,18 @@ export default function (pi: ExtensionAPI) {
 		description: "Animated star spinner with orange glow effect and fun Claude Code–style phrases",
 	});
 
+	// Capture the UI context from session_start (guaranteed to have full UI capabilities)
+	pi.on("session_start", async (_event: any, ctx: any) => {
+		if (ctx.hasUI) {
+			currentCtx = ctx;
+		}
+	});
+
 	// Start spinner when the agent begins processing
-	pi.on("before_agent_start", async (_event: any, ctx: any) => {
-		startSpinner(ctx);
+	pi.on("before_agent_start", async () => {
+		if (currentCtx) {
+			startSpinner(currentCtx);
+		}
 	});
 
 	// Stop spinner when the message is complete
