@@ -3,15 +3,11 @@
 agent/auth.json
 # Contains provider configurations and potentially API keys
 agent/models.json
+agent/settings.json
 
 # === Personal Data & History ===
 # Project-specific interaction history
 agent/sessions/
-# Local task list
-todo.json
-# Execution logs
-*.log
-subagent-store.log
 
 # === Platform-specific Binaries ===
 # Executables like rg.exe
@@ -19,17 +15,10 @@ agent/bin/
 *.exe
 
 # === Cache & Generated Files ===
-# Subagent state/cache used by Arete
-subagent-store.json
 # Web search cache
 web-search.json
 # Windows-specific ghost file
 nul
-
-# === User-specific Config (Optional) ===
-# Uncomment if you want to keep settings local only
-# agent/settings.json
-# agent/keybindings.json
 
 # === Local Skills ===
 # Skills are usually installed locally via pi/npx
