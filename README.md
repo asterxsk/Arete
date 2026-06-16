@@ -2,6 +2,18 @@
 
 This repository contains a powerful, modular collection of extensions for the Pi Agent. Each extension is designed to be fully self-contained while seamlessly integrating with the agent to provide enhanced capabilities, rich UI components, and advanced background orchestrations.
 
+## Installation
+
+```bash
+# Backup your existing agent config
+cp -r ~/.pi/agent ~/.pi/agent.bak
+
+# Clone or update the agent folder from GitHub
+git clone <your-repo-url> ~/.pi/agent
+```
+
+> Make sure `~/.pi/agent` is the target — the extensions live inside `agent/extensions/`.
+
 ## Extension Features
 
 ### UI & Presentation

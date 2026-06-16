@@ -1,6 +1,6 @@
 {
-  "defaultModel": "gemma-4-E4B",
-  "defaultProvider": "llama",
+  "defaultModel": "deepseek/deepseek-v4-flash",
+  "defaultProvider": "commandcode",
   "retry": {
     "provider": {
       "timeoutMs": 600000
