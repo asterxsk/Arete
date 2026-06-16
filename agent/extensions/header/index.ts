@@ -37,7 +37,7 @@ function colorizeAsBlackhole(lines: string[]): string[] {
 }
 
 export function buildBannerArtLines(): string[] {
-  return ["  ▄▄▄▄▄▄▄  ", "  █▝███▝█  ∏", " ▀███▆███▀▀▀", "   ▘   ▝    "];
+  return ["  ▄▄▄▄▄▄▄  ", "  █▝███▝█  ∏", " ▀███▆███▀▀▀", "   ▘   ▝    ", ""];
 }
 
 function composeSideBySide(

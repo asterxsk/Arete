@@ -1,3 +1,10 @@
+```
+  ▄▄▄▄▄▄▄
+  █▝███▝█  ∏
+ ▀███▆███▀▀▀
+   ▘   ▝
+```
+
 # arete
 
 This repository contains a powerful, modular collection of extensions for the Pi Agent. Each extension is designed to be fully self-contained while seamlessly integrating with the agent to provide enhanced capabilities, rich UI components, and advanced background orchestrations.

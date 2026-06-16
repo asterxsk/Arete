@@ -1,6 +1,6 @@
 {
-  "defaultModel": "deepseek/deepseek-v4-flash",
-  "defaultProvider": "commandcode",
+  "defaultModel": "auto",
+  "defaultProvider": "freerouter",
   "retry": {
     "provider": {
       "timeoutMs": 600000
