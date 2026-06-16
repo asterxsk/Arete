@@ -32,8 +32,8 @@ extensions/
 ├── profile-switcher/       <- multi-account auth switching
 ├── questions/              <- questions tool (multi-choice TUI with
 │                              custom-answer fallback and ASCII sketches)
-├── spinner-phrases/        <- Claude Code–style gerund spinner with
-│                              tool-aware activity tracking and glow
+├── spinner-phrases/        <- Animated star spinner with orange glow
+│                              effect and fun Claude Code–style phrases
 ├── statusline/             <- Footer status line (left→right):
 │                               provider    model
 │                               [████░░░░] 12.5k/128k

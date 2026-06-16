@@ -175,10 +175,10 @@ export default function (pi: ExtensionAPI) {
 				render(width: number): string[] {
 					// ── Left: provider + model ─────────────────────
 					const prov = provider
-						? paint(C.blue, "\uf0c2") + " " + paint(C.blue, provider)
+						? paint(C.blue, "\uf0c2") + "  " + paint(C.blue, provider)
 						: "";
 					const mdl = model
-						? paint(C.purple, "\uf121") + " " + paint(C.purple, model)
+						? paint(C.purple, "\uf121") + "  " + paint(C.purple, model)
 						: "";
 					const left = prov + (prov && mdl ? "  " : "") + mdl;
 
