@@ -1,9 +1,9 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	isEditToolResult,
 	isToolCallEventType,
 	isWriteToolResult,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { createTwoFilesPatch } from "diff";
 import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
@@ -76,18 +76,6 @@ function formatAddedRemovedPlain(added: number, removed: number): string {
 	return `(+${added}/-${removed})`;
 }
 
-
-function styleAddedRemovedForList(theme: any, text: string): string {
-	// File rows use "+x/-y" as description; other rows use normal sentences.
-	const m = text.match(/^\+(\d+)\/\-(\d+)$/);
-	if (!m) return theme.fg("muted", text);
-	const added = Number(m[1]);
-	const removed = Number(m[2]);
-
-	const plus = added === 0 ? theme.fg("text", `+${added}`) : theme.fg("success", `+${added}`);
-	const minus = removed === 0 ? theme.fg("text", `-${removed}`) : theme.fg("error", `-${removed}`);
-	return plus + theme.fg("text", "/") + minus;
-}
 
 function formatStatus(tracked: Map<string, TrackedFile>, theme?: any): string | undefined {
 	if (tracked.size === 0) return undefined;
@@ -169,7 +157,7 @@ async function ensureParentDir(absPath: string): Promise<void> {
 	function updateUi(ctx: any) {
 		if (!ctx?.hasUI) return;
 
-		// Expose raw counts for the statusline extension — dynamic rendering
+		// Expose raw counts for the statusline extension
 		let edited = 0, created = 0;
 		for (const t of tracked.values()) {
 			if (t.kind === "new") created++;
@@ -177,14 +165,14 @@ async function ensureParentDir(absPath: string): Promise<void> {
 		}
 		(globalThis as any).__pi_filechanges_counts = { edited, created };
 
+		// Expose file changes lines for the todos widget — respect widgetHidden
+		(globalThis as any).__pi_filechanges_lines = widgetHidden ? [] : (buildWidgetLines(tracked, ctx.ui.theme) ?? []);
+
 		const fcStatus = formatStatus(tracked, ctx.ui.theme);
 		ctx.ui.setStatus("filechanges", fcStatus);
 
-		if (!widgetHidden && tracked.size > 0) {
-			ctx.ui.setWidget("filechanges", buildWidgetLines(tracked, ctx.ui.theme), { order: 95 });
-		} else {
-			ctx.ui.setWidget("filechanges", undefined);
-		}
+		// File changes now rendered by todos widget
+		ctx.ui.setWidget("filechanges", undefined);
 	}
 
 	async function recomputeTrackedFile(ctx: any, relPath: string) {
@@ -268,7 +256,7 @@ async function ensureParentDir(absPath: string): Promise<void> {
 		updateUi(ctx);
 	}
 
-	async function declineAll(ctx: ExtensionCommandContext) {
+	async function declineAll(ctx: ExtensionCommandContext, force: boolean) {
 		await ctx.waitForIdle();
 
 		if (tracked.size === 0) {
@@ -276,7 +264,6 @@ async function ensureParentDir(absPath: string): Promise<void> {
 			return;
 		}
 
-		const force = (ctx as any).args?.includes("force") ?? false;
 		if (ctx.hasUI && !force) {
 			const ok = await ctx.ui.confirm(
 				"Decline pi changes?",
@@ -321,7 +308,7 @@ async function ensureParentDir(absPath: string): Promise<void> {
 		}
 	}
 
-	async function acceptAll(ctx: ExtensionCommandContext) {
+	async function acceptAll(ctx: ExtensionCommandContext, force: boolean) {
 		await ctx.waitForIdle();
 
 		if (tracked.size === 0) {
@@ -329,7 +316,6 @@ async function ensureParentDir(absPath: string): Promise<void> {
 			return;
 		}
 
-		const force = (ctx as any).args?.includes("force") ?? false;
 		if (ctx.hasUI && !force) {
 			const ok = await ctx.ui.confirm(
 				"Accept pi changes?",
@@ -388,16 +374,14 @@ async function ensureParentDir(absPath: string): Promise<void> {
 	pi.registerCommand("filechanges-accept", {
 		description: "Accept pi-made changes (keeps files, clears log)",
 		handler: async (args, ctx) => {
-			(ctx as any).args = parseCommandArgs(args);
-			await acceptAll(ctx);
+			await acceptAll(ctx, parseCommandArgs(args).includes("force"));
 		},
 	});
 
 	pi.registerCommand("filechanges-decline", {
 		description: "Decline pi-made changes (reverts files, clears log)",
 		handler: async (args, ctx) => {
-			(ctx as any).args = parseCommandArgs(args);
-			await declineAll(ctx);
+			await declineAll(ctx, parseCommandArgs(args).includes("force"));
 		},
 	});
 
@@ -522,3 +506,26 @@ async function ensureParentDir(absPath: string): Promise<void> {
 		updateUi(ctx);
 	});
 }
+
+// ponytail: minimal self-check for the pure helpers
+function demo(): void {
+	const diff = `--- a/file.txt
++++ b/file.txt
+@@ -1,3 +1,3 @@
+ line1
+-line2
++line2!
+ line3
++newline
+`;
+	const counts = countDiffLines(diff);
+	console.assert(counts.added === 2, `added=${counts.added}`);
+	console.assert(counts.removed === 1, `removed=${counts.removed}`);
+
+	const path = normalizeToolPath("/home/user/project", "src/file.ts");
+	console.assert(!path.relPath.startsWith("..") && path.relPath.includes("src"), path.relPath);
+
+	console.assert(formatAddedRemovedPlain(2, 1) === "(+2/-1)");
+	console.assert(formatStatus(new Map(), undefined) === undefined);
+}
+// demo(); // uncomment to run

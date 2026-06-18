@@ -1,13 +1,13 @@
 /**
  * toolkit/statusline — status line footer with provider, model, context usage, and file changes.
  *
- * Renders a compact one-line footer:
- *   Left:   provider    model
- *   Right:  [████░░░░] 12.5k/128k    Δ 5  + 2
+ * Renders a two-line footer:
+ *   Line 1: <provider>                    <context bar>
+ *   Line 2: └ <model>                     <file changes>
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 // ── Theme colour helpers ──────────────────────────────────────────────
 
@@ -15,14 +15,15 @@ function toHex(rgb: [number, number, number]): string {
 	return `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
 }
 
-const RESET = "\x1b[0m";	const C = {
-		blue:   toHex([142, 202, 230]),  // #8ecae6
-		purple: toHex([187, 136, 221]),  // #bb88dd
-		orange: toHex([240, 160,  80]),  // #f0a050
-		gold:   toHex([248, 204, 133]),  // #f8cc85
-		green:  toHex([120, 224, 160]),  // #78e0a0
-		red:    toHex([224, 120, 128]),  // #e07880
-	};
+const RESET = "\x1b[0m";
+const C = {
+	blue:   toHex([142, 202, 230]),  // #8ecae6
+	purple: toHex([187, 136, 221]),  // #bb88dd
+	orange: toHex([240, 160,  80]),  // #f0a050
+	gold:   toHex([248, 204, 133]),  // #f8cc85
+	green:  toHex([120, 224, 160]),  // #78e0a0
+	red:    toHex([224, 120, 128]),  // #e07880
+};
 
 function paint(clr: string, text: string): string {
 	return text ? `${clr}${text}${RESET}` : "";
@@ -71,9 +72,9 @@ function getContextSafe(ctx: any): ContextInfo {
 
 const COLOR_STOPS: { at: number; rgb: [number, number, number] }[] = [
 	{ at: 0,   rgb: [120, 224, 160] },  // green (safe)
-	{ at: 50,  rgb: [240, 160,  80] },  // orange
-	{ at: 75,  rgb: [248, 204, 133] },  // gold
-	{ at: 100, rgb: [224, 120, 128] },  // red
+	{ at: 30,  rgb: [240, 160,  80] },  // orange (30%+)
+	{ at: 70,  rgb: [248, 204, 133] },  // gold (70%+)
+	{ at: 90,  rgb: [224, 120, 128] },  // red (90%+)
 ];
 
 function lerpRgb(a: [number, number, number], b: [number, number, number], t: number): string {
@@ -105,15 +106,10 @@ function smoothContextColor(pct: number): string {
 function buildGradientBar(percent: number, segments = 8): string {
 	const clamped = Math.max(0, Math.min(100, Math.round(percent)));
 	const filled = Math.round((clamped / 100) * segments);
+	const color = smoothContextColor(clamped);
 	let result = "";
 	for (let i = 0; i < segments; i++) {
-		if (i < filled) {
-			// Each filled block gets its own colour based on its midpoint in the gradient
-			const midPct = ((i + 0.5) / segments) * 100;
-			result += smoothContextColor(midPct) + "█" + RESET;
-		} else {
-			result += "░";
-		}
+		result += i < filled ? color + "█" + RESET : "░";
 	}
 	return result;
 }
@@ -121,9 +117,7 @@ function buildGradientBar(percent: number, segments = 8): string {
 // ── Model name shortener ──────────────────────────────────────────────
 
 function shortModel(raw: string): string {
-	// Strip provider prefix: "deepseek/deepseek-v4-flash" → "deepseek-v4-flash"
 	const stripped = raw.replace(/^[^/]+\//, "");
-	// Shorten "deepseek-v4-flash" → "ds-v4-flash" if too long
 	if (stripped.length > 18) {
 		return stripped.replace(/^deepseek-/, "ds-").replace(/^anthropic-/, "cl-");
 	}
@@ -173,14 +167,15 @@ export default function (pi: ExtensionAPI) {
 				dispose() { requestRender = undefined; },
 				invalidate() {},
 				render(width: number): string[] {
-					// ── Left: provider + model ─────────────────────
+					// ── Line 1: provider ──────────────────────────
 					const prov = provider
-						? paint(C.blue, "\uf0c2") + "  " + paint(C.blue, provider)
+						? paint(C.orange, "\uf233") + " " + paint(C.orange, provider)
 						: "";
-					const mdl = model
-						? paint(C.purple, "\uf121") + "  " + paint(C.purple, model)
+
+					// ── Line 2: model ─────────────────────────────
+					const mdlLine = model
+						? "\u2514 " + model
 						: "";
-					const left = prov + (prov && mdl ? "  " : "") + mdl;
 
 					// ── Right: context bar + file changes ──────────
 					const bar = buildGradientBar(contextPercent);
@@ -188,11 +183,10 @@ export default function (pi: ExtensionAPI) {
 					const tokenStr = contextWindow > 0
 						? `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`
 						: `${formatTokens(contextTokens)}`;
-					const ctxPart = paint(barColor, "\uf080")
-						+ " " + paint(barColor, "[") + bar + paint(barColor, "]")
-						+ " " + paint(barColor, tokenStr);
+					const ctxPart = "\uf080"
+						+ " [" + bar + "] "
+						+ paint(barColor, tokenStr);
 
-					// Compact cue when context > 90% — bold red with a warning icon
 					const compactCue = contextPercent > 90
 						? "  " + paint(C.red, "\uf06a") + " " + paint(C.red, "compact!")
 						: "";
@@ -201,20 +195,32 @@ export default function (pi: ExtensionAPI) {
 						{ edited: number; created: number } | undefined;
 					let fcPart = "";
 					if (counts && (counts.edited > 0 || counts.created > 0)) {
-						const parts: string[] = [];
-						if (counts.edited > 0) parts.push(paint(C.orange, "Δ" + counts.edited));
-						if (counts.created > 0) parts.push(paint(C.green, "+" + counts.created));
-						fcPart = "  " + paint(C.green, "\uf0c5") + " " + parts.join("  ");
+						let parts: string[] = [];
+						if (counts.edited > 0) parts.push(paint(C.orange, "\u0394" + counts.edited));
+						if (counts.created > 0) {
+							parts.push(paint(C.green, counts.created.toString()));
+							parts.push(paint(C.green, "\uf0c5"));
+						}
+						fcPart = " " + parts.join(" ");
 					}
 
-					const right = ctxPart + compactCue + fcPart;
-
-					// ── Align left + right ─────────────────────────
-					if (!left && !right) return [];
-					const combined = left + right;
-					const visLen = visibleWidth(combined);
-					const pad = " ".repeat(Math.max(1, width - visLen));
-					return [truncateToWidth(left + pad + right, width)];
+					// ── Align lines ─────────────────────────────────
+					const lines: string[] = [];
+					if (prov) {
+						const line1Right = ctxPart + compactCue;
+						const rightW = visibleWidth(line1Right);
+						const avail = width - rightW - 1;
+						const left = truncateToWidth(prov, Math.max(0, avail), "", true);
+						lines.push(left + line1Right);
+					}
+					if (mdlLine) {
+						const line2Right = fcPart;
+						const rightW = visibleWidth(line2Right);
+						const avail = width - rightW - 1; // 1-char right margin
+						const left = truncateToWidth(mdlLine, Math.max(0, avail), "", true);
+						lines.push(left + line2Right);
+					}
+					return lines;
 				},
 			};
 		});
@@ -229,18 +235,20 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify?.("Context only at " + pct + "% — no need to compact yet.", "info");
 				return;
 			}
-			ctx.ui.notify?.(" Compacting context...", "info");
-			// Trigger compaction by sending /compact as a user message
-			const result = pi.sendUserMessage("/compact", { deliverAs: "nextTurn" });
-			if (result && typeof (result as any).then === "function") {
-				(result as Promise<void>).catch(() => {});
+			ctx.ui.notify?.("Compacting context...", "info");
+			try {
+				ctx.sendUserMessage("/compact", { deliverAs: "followUp" });
+			} catch (e) {
+				ctx.ui.notify?.(
+					"Failed to compact: " + (e instanceof Error ? e.message : String(e)),
+					"error"
+				);
 			}
 		},
 	});
 
 	pi.on("model_select", (_event, ctx) => refresh(ctx));
 	pi.on("message_update", (_event, ctx) => {
-		// Store latest values immediately but throttle renders
 		const info = getContextSafe(ctx);
 		contextPercent = info.percent;
 		contextTokens = info.tokens;
@@ -254,7 +262,6 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 	pi.on("message_end", (_event, ctx) => {
-		// Flush throttle and do a final render immediately
 		if (throttleTimer) {
 			clearTimeout(throttleTimer);
 			throttleTimer = undefined;
@@ -264,3 +271,15 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.on("session_compact", () => requestRender?.());
 }
+
+// ponytail: minimal self-check for the pure helpers
+function demo(): void {
+	console.assert(formatTokens(1_234_567) === "1.2M", "1.2M");
+	console.assert(formatTokens(12_300) === "12.3k", "12.3k");
+	console.assert(formatTokens(999) === "999", "999");
+	console.assert(shortModel("openai/gpt-4o-mini") === "gpt-4o-mini", "shortModel keeps short names");
+	console.assert(shortModel("deepseek/deepseek-reasoner-model-v4-flash") === "ds-reasoner-model-v4-flash", "deepseek shortens");
+	console.assert(smoothContextColor(0) === "\x1b[38;2;120;224;160m", "green");
+	console.assert(buildGradientBar(50, 8).includes("█"), "bar has filled segments");
+}
+// demo(); // uncomment to run

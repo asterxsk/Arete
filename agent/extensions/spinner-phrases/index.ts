@@ -1,5 +1,5 @@
 /**
- * spinner-phrases — animated star spinner with orange glow effect and fun phrases.
+ * spinner-phrases — animated star spinner with fun phrases.
  *
  * Replaces the pi core's native "Working..." indicator with a rotating star,
  * fun phrases, and elapsed time.
@@ -10,40 +10,20 @@
  *   agent_end           → stop spinner (fires when agent fully finishes)
  *   session_shutdown    → cleanup
  *
- * The interval runs continuously between before_agent_start and agent_end,
- * naturally covering tool calls without fragile debounce timers.
+ * The interval runs continuously between the first before_agent_start and
+ * agent_end, naturally covering tool calls without fragile debounce timers.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// ── Theme colours (orange glow palette) ────────────────────────────
+// ── Orange colour ────────────────────────────────────────────────
 
+const ORANGE = "\x1b[38;2;255;180;60m";
 const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-
-const GLOW_GOLD   = "\x1b[38;2;255;220;120m";
-const GLOW_BRIGHT = "\x1b[38;2;255;200;80m";
-const GLOW_MAIN   = "\x1b[38;2;255;165;0m";
-const GLOW_DIM    = "\x1b[38;2;200;120;30m";
-
-// ── Text colours (white on default terminal bg) ────────────────────
-
-const TEXT_WHITE = "\x1b[38;2;230;230;230m";
-const TEXT_MUTED = "\x1b[38;2;140;140;140m";
 
 // ── Star spinner frames ───────────────────────────────────────────
 
-const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "☆"];
-
-const STAR_COLORS: string[] = [
-	GLOW_GOLD,
-	GLOW_BRIGHT,
-	GLOW_MAIN,
-	GLOW_BRIGHT,
-	GLOW_GOLD,
-	GLOW_DIM,
-	GLOW_DIM,
-];
+const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆"];
 
 // ── Fun phrases ────────────────────────────────────────────────────
 
@@ -83,13 +63,13 @@ let frameIndex = 0;
 let tickCount = 0;
 let currentCtx: any = null;
 
-// Typewriter transition state
-const TYPING_SPEED_MS = 40;
+// Typewriter transition state, driven by the same 250ms tick as the spinner.
+const TRANSITION_EVERY_TICKS = 48; // 48 × 250ms = 12s
 let transitionState: "idle" | "erasing" | "typing" = "idle";
 let displayedPhrase = "";
 let targetPhrase = "";
 let transitionIdx = 0;
-let transitionIntervalId: ReturnType<typeof setInterval> | null = null;
+let pendingPhraseIndex = 0;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -107,42 +87,43 @@ function formatElapsed(totalSeconds: number): string {
 	return `${totalSeconds}s`;
 }
 
-function paintStar(frameIdx: number): string {
-	const star = STAR_FRAMES[frameIdx % STAR_FRAMES.length]!;
-	const color = STAR_COLORS[frameIdx % STAR_COLORS.length]!;
-	return `${color}${BOLD}${star}${RESET}`;
-}
-
 function pushToUI(text: string): void {
 	if (currentCtx?.hasUI) {
 		currentCtx.ui.setWorkingMessage(text);
 	}
-	(globalThis as any).__pi_spinner_text = text;
 }
 
 function buildFullText(phrase: string): string {
 	const elapsed = Math.floor((Date.now() - startTime) / 1000);
 	const timeStr = formatElapsed(elapsed);
-	const star = paintStar(frameIndex);
-	return `${star} ${TEXT_WHITE}${phrase}${RESET} ${TEXT_MUTED}(${timeStr})${RESET}`;
+	const plain = `${STAR_FRAMES[frameIndex % STAR_FRAMES.length]} ${phrase} (${timeStr})`;
+	return `${ORANGE}${plain}${RESET}`;
 }
 
-/** Erase current phrase char by char, then type the next phrase. */
-function startTransition(fromPhrase: string, toPhrase: string): void {
+function clearTransition(): void {
+	transitionState = "idle";
+	displayedPhrase = "";
+	targetPhrase = "";
+	transitionIdx = 0;
+}
+
+function finishTransition(): void {
+	phraseIndex = pendingPhraseIndex;
+	clearTransition();
+}
+
+function startTransition(): void {
+	pendingPhraseIndex = (phraseIndex + 1) % PHRASES.length;
+	targetPhrase = PHRASES[pendingPhraseIndex]! + "...";
+	displayedPhrase = PHRASES[phraseIndex]! + "...";
 	transitionState = "erasing";
-	displayedPhrase = fromPhrase;
-	targetPhrase = toPhrase;
-	transitionIdx = fromPhrase.length;
-	if (transitionIntervalId) clearInterval(transitionIntervalId);
-	transitionIntervalId = setInterval(transitionTick, TYPING_SPEED_MS);
-	transitionTick(); // fire immediately for instant feedback
+	transitionIdx = displayedPhrase.length;
 }
 
-function transitionTick(): void {
+function transitionStep(): void {
 	if (transitionState === "erasing") {
 		transitionIdx--;
-		displayedPhrase = transitionIdx > 0 ? displayedPhrase.slice(0, transitionIdx) : "";
-		pushToUI(buildFullText(displayedPhrase));
+		displayedPhrase = displayedPhrase.slice(0, Math.max(0, transitionIdx));
 		if (transitionIdx <= 0) {
 			transitionState = "typing";
 			transitionIdx = 0;
@@ -150,44 +131,27 @@ function transitionTick(): void {
 	} else if (transitionState === "typing") {
 		transitionIdx++;
 		displayedPhrase = targetPhrase.slice(0, transitionIdx);
-		pushToUI(buildFullText(displayedPhrase));
 		if (transitionIdx >= targetPhrase.length) {
-			// Transition complete
-			clearTransition();
+			finishTransition();
 		}
 	}
 }
 
-function clearTransition(): void {
-	if (transitionIntervalId) {
-		clearInterval(transitionIntervalId);
-		transitionIntervalId = null;
-	}
-	transitionState = "idle";
-	displayedPhrase = "";
-	targetPhrase = "";
-	// Advance phrase index now that transition is fully done
-	phraseIndex = (phraseIndex + 1) % PHRASES.length;
-}
-
 function getPhraseText(): string {
 	if (transitionState !== "idle") return displayedPhrase;
-	return PHRASES[phraseIndex % PHRASES.length]!;
+	return PHRASES[phraseIndex % PHRASES.length]! + "...";
 }
 
 // ── Animation tick ─────────────────────────────────────────────────
 
 function tick(): void {
-	const star = paintStar(frameIndex);
-
-	// Start typewriter transition every 80 ticks (250ms × 80 = 20s), but only when idle
-	if (tickCount > 0 && tickCount % 80 === 0 && transitionState === "idle") {
-		const nextPhraseId = (phraseIndex + 1) % PHRASES.length;
-		startTransition(PHRASES[phraseIndex]!, PHRASES[nextPhraseId]!);
+	if (transitionState !== "idle") {
+		transitionStep();
+	} else if (tickCount > 0 && tickCount % TRANSITION_EVERY_TICKS === 0) {
+		startTransition();
 	}
 
-	const phrase = getPhraseText();
-	pushToUI(buildFullText(phrase));
+	pushToUI(buildFullText(getPhraseText()));
 
 	frameIndex++;
 	tickCount++;
@@ -195,32 +159,27 @@ function tick(): void {
 
 // ── Interval management ────────────────────────────────────────────
 
-/** Start (or restart) the spinner animation. Called on each before_agent_start. */
 function start(ctx: any): void {
-	// Clean up any lingering transition from previous run
-	clearTransition();
-
 	currentCtx = ctx;
+
+	if (intervalId !== null) {
+		// Already running between tool calls; keep the same timer and elapsed time.
+		return;
+	}
+
+	clearTransition();
 	startTime = Date.now();
 	phraseIndex = Math.floor(Math.random() * PHRASES.length);
 	frameIndex = 0;
 	tickCount = 0;
 
-	// Hide the default braille spinner (⠸ etc.) — we use our own star animation
 	ctx.ui.setWorkingIndicator({ frames: [] });
-
-	if (intervalId !== null) {
-		tick();
-		return;
-	}
 
 	tick();
 	intervalId = setInterval(tick, 250);
 }
 
-/** Stop the spinner animation. Called on agent_end and session_shutdown. */
 function stop(): void {
-	// Kill both intervals
 	clearTransition();
 	if (intervalId !== null) {
 		clearInterval(intervalId);
@@ -230,7 +189,6 @@ function stop(): void {
 		currentCtx.ui.setWorkingIndicator(undefined);
 		currentCtx.ui.setWorkingMessage(undefined);
 	}
-	(globalThis as any).__pi_spinner_text = "";
 }
 
 // ── Extension entry ────────────────────────────────────────────────
@@ -238,32 +196,36 @@ function stop(): void {
 export default function (pi: ExtensionAPI) {
 	(globalThis as any).__pi_extension_features?.push({
 		name: "spinner-phrases",
-		description: "Animated star spinner with orange glow effect and fun Claude Code–style phrases",
+		description: "Animated star spinner with fun Claude Code–style phrases",
 	});
 
-	// Capture UI context — NO spinner yet, wait for actual LLM activity
 	pi.on("session_start", async (_event: any, ctx: any) => {
 		if (ctx.hasUI) {
 			currentCtx = ctx;
 		}
 	});
 
-	// Start spinner when the LLM begins a thinking phase.
-	// This fires for each phase: initial response AND after tool call results.
 	pi.on("before_agent_start", async () => {
 		if (currentCtx) {
 			start(currentCtx);
 		}
 	});
 
-	// Stop spinner when the agent fully finishes (after all tool calls done).
 	pi.on("agent_end", async () => {
 		stop();
 	});
 
-	// Full cleanup on session shutdown
 	pi.on("session_shutdown", () => {
 		stop();
 		currentCtx = null;
 	});
 }
+
+// ponytail: minimal self-check for the pure helper
+function demo(): void {
+	console.assert(formatElapsed(5) === "5s", "5s");
+	console.assert(formatElapsed(65) === "1m 5s", "1m 5s");
+	console.assert(formatElapsed(3600) === "1h", "1h");
+	console.assert(formatElapsed(3665) === "1h 1m", "1h 1m");
+}
+// demo(); // uncomment to run
