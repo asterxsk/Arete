@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Input, Key, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { Input, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { CompactToolBox as CompactResult, emptyComponent } from "../betterui/index.js";
 
 interface QuestionOptionInput {
 	value: string;
@@ -499,6 +500,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "questions",
 		label: "Questions",
+		renderShell: "self",
 		description:
 			"Ask the user one or more structured questions in an interactive terminal UI. Use when you need preset choices plus a free-text answer, or an optional ASCII sketch to help the decision.",
 		promptSnippet: "Ask structured questions with preset options, a custom-answer fallback, and optional ASCII sketches.",
@@ -550,38 +552,33 @@ export default function (pi: ExtensionAPI) {
 				details: result,
 			};
 		},
-		renderCall(args, theme, _context) {
-			const rawQuestions = Array.isArray((args as { questions?: unknown }).questions)
-				? ((args as { questions: QuestionInput[] }).questions)
-				: [];
-			const labels = rawQuestions
-				.map((q) => normalizeLabel(q.label, q.prompt))
-				.filter(Boolean)
-				.join(", ");
-			let text = theme.fg("toolTitle", theme.bold("questions "));
-			text += theme.fg("muted", `${rawQuestions.length} question${rawQuestions.length === 1 ? "" : "s"}`);
-			if (labels) {
-				text += theme.fg("dim", ` (${truncateToWidth(labels, 40)})`);
+		renderCall() { return emptyComponent; },
+		renderResult(result, { isPartial, expanded }) {
+			if (isPartial) return new CompactResult({ toolName: "questions", argsLine: "prompting...", state: "pending" });
+			const content = result.content[0];
+			const text = content?.type === "text" ? content.text : "";
+			if (result.isError || text.startsWith("Error")) {
+				const firstLine = text.split("\n")[0] || "error";
+				return new CompactResult({ toolName: "questions", argsLine: firstLine, state: "error" });
 			}
-			return new Text(text, 0, 0);
-		},
-		renderResult(result, _options, theme, _context) {
 			const details = result.details as QuestionsResult | undefined;
-			if (!details) {
-				const text = result.content[0];
-				return new Text(text?.type === "text" ? text.text : "", 0, 0);
+			if (details?.cancelled) {
+				return new CompactResult({ toolName: "questions", argsLine: "cancelled", state: "done" });
 			}
-			if (details.cancelled) {
-				return new Text(theme.fg("warning", "Cancelled"), 0, 0);
+			const allLines = text.split("\n").filter((l) => l.trim());
+			const argsLine = details?.answers.length !== undefined ? `${details.answers.length} answer${details.answers.length === 1 ? "" : "s"}` : "done";
+			let previewLines: string[] | undefined;
+			if (expanded) {
+				previewLines = allLines.map((l) => l.length > 120 ? l.slice(0, 117) + "..." : l);
 			}
-			const lines = details.answers.map((answer) => {
-				if (answer.source === "custom") {
-					return `${theme.fg("success", "✓ ")} ${theme.fg("accent", answer.questionLabel)}: ${theme.fg("muted", "(wrote)")} ${answer.label}`;
-				}
-				const display = typeof answer.optionIndex === "number" ? `${answer.optionIndex}. ${answer.label}` : answer.label;
-				return `${theme.fg("success", "✓ ")} ${theme.fg("accent", answer.questionLabel)}: ${theme.fg("text", display)}`;
+			return new CompactResult({
+				toolName: "questions",
+				argsLine,
+				state: "done",
+				previewLines,
+				footer: allLines.length > 0 ? `${allLines.length} line${allLines.length === 1 ? "" : "s"}` : undefined,
+				expanded,
 			});
-			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
 }

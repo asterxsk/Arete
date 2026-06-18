@@ -1,182 +1,77 @@
 /**
  * spinner-phrases — animated star spinner with orange glow effect and fun phrases.
  *
- * Replaces the default "Working..." indicator (shown via the pi core's built-in
- * loadingAnimation) with a rotating star that has an orange glow, cycles through
- * Claude Code–style gerund phrases, and shows elapsed time:
- *   "✦ Manifesting (1m 2s)"
+ * Replaces the pi core's native "Working..." indicator with a rotating star,
+ * fun phrases, and elapsed time.
  *
- * Uses `ctx.ui.setWorkingMessage()` to update the pi core's working indicator,
- * and also sets `globalThis.__pi_spinner_text` for the `todos/` widget.
+ * Lifecycle:
+ *   session_start       → capture UI context (NO spinner yet)
+ *   before_agent_start  → start spinner (fires each LLM thinking phase)
+ *   agent_end           → stop spinner (fires when agent fully finishes)
+ *   session_shutdown    → cleanup
+ *
+ * The interval runs continuously between before_agent_start and agent_end,
+ * naturally covering tool calls without fragile debounce timers.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-// ── Theme colours ──────────────────────────────────────────────────
+// ── Theme colours (orange glow palette) ────────────────────────────
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 
-// Orange glow palette
-const ORANGE_GLOW_BRIGHT = "\x1b[38;2;255;200;80m";
-const ORANGE_GLOW_MAIN   = "\x1b[38;2;255;165;0m";
-const ORANGE_GLOW_DIM    = "\x1b[38;2;200;120;30m";
-const ORANGE_GLOW_GOLD   = "\x1b[38;2;255;220;120m";
+const GLOW_GOLD   = "\x1b[38;2;255;220;120m";
+const GLOW_BRIGHT = "\x1b[38;2;255;200;80m";
+const GLOW_MAIN   = "\x1b[38;2;255;165;0m";
+const GLOW_DIM    = "\x1b[38;2;200;120;30m";
+
+// ── Text colours (white on default terminal bg) ────────────────────
+
+const TEXT_WHITE = "\x1b[38;2;230;230;230m";
+const TEXT_MUTED = "\x1b[38;2;140;140;140m";
 
 // ── Star spinner frames ───────────────────────────────────────────
 
-const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "⋆", "☆"];
+const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "☆"];
 
-// Each frame gets a colour treatment (some brighter for "glow" pulse)
 const STAR_COLORS: string[] = [
-	ORANGE_GLOW_GOLD,   // ✦ — bright gold
-	ORANGE_GLOW_BRIGHT, // ✧ — bright orange
-	ORANGE_GLOW_MAIN,   // ★ — main orange
-	ORANGE_GLOW_BRIGHT, // ✧ — bright orange
-	ORANGE_GLOW_GOLD,   // ✦ — bright gold
-	ORANGE_GLOW_DIM,    // ☆ — dimmed
-	ORANGE_GLOW_BRIGHT, // ⋆ — bright
-	ORANGE_GLOW_DIM,    // ☆ — dimmed
+	GLOW_GOLD,
+	GLOW_BRIGHT,
+	GLOW_MAIN,
+	GLOW_BRIGHT,
+	GLOW_GOLD,
+	GLOW_DIM,
+	GLOW_DIM,
 ];
 
-// ── Fun phrases (Claude Code–inspired gerunds) ─────────────────────
+// ── Fun phrases ────────────────────────────────────────────────────
 
 const PHRASES: string[] = [
-	"Manifesting",
-	"Thinking",
-	"Analyzing",
-	"Researching",
-	"Computing",
-	"Pondering",
-	"Ruminating",
-	"Synthesizing",
-	"Orchestrating",
-	"Architecting",
-	"Crafting",
-	"Brewing",
-	"Cooking",
-	"Forging",
-	"Weaving",
-	"Churning",
-	"Coalescing",
-	"Crystallizing",
-	"Incubating",
-	"Fermenting",
-	"Simmering",
-	"Marinating",
-	"Perambulating",
-	"Gallivanting",
-	"Frolicking",
-	"Vibing",
-	"Quantumizing",
-	"Reticulating",
-	"Spelunking",
-	"Wrangling",
-	"Bootstrapping",
-	"Generating",
-	"Contemplating",
-	"Philosophising",
-	"Prestidigitating",
-	"Transmuting",
-	"Levitationing",
-	"Moonwalking",
-	"Beboppin'",
-	"Jitterbugging",
-	"Flibbertigibbeting",
-	"Shenaniganing",
-	"Whatchamacalliting",
-	"Discombobulating",
-	"Recombobulating",
-	"Actualizing",
-	"Envisioning",
-	"Imagining",
-	"Cerebrating",
-	"Ideating",
-	"Hatching",
-	"Pollinating",
-	"Germinating",
-	"Sprouting",
-	"Noodling",
-	"Doodling",
-	"Tinkering",
-	"Crunching",
-	"Hashing",
-	"Unfurling",
-	"Swirling",
-	"Whirring",
-	"Pulsing",
-	"Beaming",
-	"Gusting",
-	"Flowing",
-	"Ebbing",
-	"Meandering",
-	"Moseying",
-	"Scurrying",
-	"Scampering",
-	"Zigzagging",
-	"Wandering",
-	"Nesting",
-	"Burrowing",
-	"Roosting",
-	"Harmonizing",
-	"Channeling",
-	"Resonating",
-	"Osmosing",
-	"Symbioting",
-	"Metamorphosing",
-	"Transfiguring",
-	"Sublimating",
-	"Precipitating",
-	"Nucleating",
-	"Ionizing",
-	"Photosynthesizing",
-	"Stewing",
-	"Proofing",
-	"Leavening",
-	"Kneading",
-	"Whisking",
-	"Drizzling",
-	"Garnishing",
-	"Seasoning",
-	"Caramelizing",
-	"Flambéing",
-	"Blanching",
-	"Julienning",
-	"Sautéing",
-	"Zesting",
-	"Baking",
-	"Roasting",
-	"Tempering",
-	"Infusing",
-	"Brewing",
-	"Concocting",
-	"Elucidating",
-	"Deciphering",
-	"Puzzling",
-	"Perusing",
-	"Musing",
-	"Mulling",
-	"Deliberating",
-	"Cogitating",
-	"Pondering",
-	"Ruminating",
-	"Speculating",
-	"Hypothesizing",
-	"Theorizing",
-	"Postulating",
-	"Determining",
-	"Inferring",
-	"Deducing",
-	"Extrapolating",
-	"Interpolating",
-	"Calibrating",
-	"Tuning",
-	"Optimizing",
-	"Refactoring",
-	"Polishing",
-	"Shining",
-	"Gleaming",
-	"Glowing",
+	"Manifesting", "Thinking", "Analyzing", "Researching", "Computing",
+	"Pondering", "Ruminating", "Synthesizing", "Orchestrating", "Architecting",
+	"Crafting", "Brewing", "Cooking", "Forging", "Weaving", "Churning",
+	"Coalescing", "Crystallizing", "Incubating", "Fermenting", "Simmering",
+	"Marinating", "Perambulating", "Gallivanting", "Frolicking", "Vibing",
+	"Quantumizing", "Reticulating", "Spelunking", "Wrangling", "Bootstrapping",
+	"Generating", "Contemplating", "Philosophising", "Prestidigitating",
+	"Transmuting", "Levitationing", "Moonwalking", "Beboppin'", "Jitterbugging",
+	"Flibbertigibbeting", "Shenaniganing", "Whatchamacalliting", "Discombobulating",
+	"Recombobulating", "Actualizing", "Envisioning", "Imagining", "Cerebrating",
+	"Ideating", "Hatching", "Pollinating", "Germinating", "Sprouting", "Noodling",
+	"Doodling", "Tinkering", "Crunching", "Hashing", "Unfurling", "Swirling",
+	"Whirring", "Pulsing", "Beaming", "Gusting", "Flowing", "Ebbing", "Meandering",
+	"Moseying", "Scurrying", "Scampering", "Zigzagging", "Wandering", "Nesting",
+	"Burrowing", "Roosting", "Harmonizing", "Channeling", "Resonating", "Osmosing",
+	"Symbioting", "Metamorphosing", "Transfiguring", "Sublimating", "Precipitating",
+	"Nucleating", "Ionizing", "Photosynthesizing", "Stewing", "Proofing", "Leavening",
+	"Kneading", "Whisking", "Drizzling", "Garnishing", "Seasoning", "Caramelizing",
+	"Flambéing", "Blanching", "Julienning", "Sautéing", "Zesting", "Baking", "Roasting",
+	"Tempering", "Infusing", "Concocting", "Elucidating", "Deciphering", "Puzzling",
+	"Perusing", "Musing", "Mulling", "Deliberating", "Cogitating", "Speculating",
+	"Hypothesizing", "Theorizing", "Postulating", "Determining", "Inferring",
+	"Deducing", "Extrapolating", "Interpolating", "Calibrating", "Tuning",
+	"Optimizing", "Refactoring", "Polishing", "Shining", "Gleaming", "Glowing",
 ];
 
 // ── State ──────────────────────────────────────────────────────────
@@ -187,6 +82,14 @@ let phraseIndex = 0;
 let frameIndex = 0;
 let tickCount = 0;
 let currentCtx: any = null;
+
+// Typewriter transition state
+const TYPING_SPEED_MS = 40;
+let transitionState: "idle" | "erasing" | "typing" = "idle";
+let displayedPhrase = "";
+let targetPhrase = "";
+let transitionIdx = 0;
+let transitionIntervalId: ReturnType<typeof setInterval> | null = null;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -210,61 +113,124 @@ function paintStar(frameIdx: number): string {
 	return `${color}${BOLD}${star}${RESET}`;
 }
 
-// ── Spinner update ─────────────────────────────────────────────────
-
-function updateSpinner(): void {
-	const elapsed = Math.floor((Date.now() - startTime) / 1000);
-	const timeStr = formatElapsed(elapsed);
-	const star = paintStar(frameIndex);
-
-	// Pick the phrase — change every 4 ticks for a nice cadence
-	if (tickCount > 0 && tickCount % 4 === 0) {
-		phraseIndex = (phraseIndex + 1) % PHRASES.length;
-	}
-	const phrase = PHRASES[phraseIndex % PHRASES.length]!;
-
-	// Build the glow-effect string
-	//   ★ Manifesting (1m 2s)
-	// Star gets bright glow, phrase is orange, time is dimmed
-	const text = `${star} ${ORANGE_GLOW_MAIN}${phrase}${RESET} ${ORANGE_GLOW_DIM}(${timeStr})${RESET}`;
-
-	// Update the todos widget bridge
-	(globalThis as any).__pi_spinner_text = text;
-
-	// Update the pi core's working indicator (this is what actually shows "Working...")
+function pushToUI(text: string): void {
 	if (currentCtx?.hasUI) {
 		currentCtx.ui.setWorkingMessage(text);
 	}
+	(globalThis as any).__pi_spinner_text = text;
+}
+
+function buildFullText(phrase: string): string {
+	const elapsed = Math.floor((Date.now() - startTime) / 1000);
+	const timeStr = formatElapsed(elapsed);
+	const star = paintStar(frameIndex);
+	return `${star} ${TEXT_WHITE}${phrase}${RESET} ${TEXT_MUTED}(${timeStr})${RESET}`;
+}
+
+/** Erase current phrase char by char, then type the next phrase. */
+function startTransition(fromPhrase: string, toPhrase: string): void {
+	transitionState = "erasing";
+	displayedPhrase = fromPhrase;
+	targetPhrase = toPhrase;
+	transitionIdx = fromPhrase.length;
+	if (transitionIntervalId) clearInterval(transitionIntervalId);
+	transitionIntervalId = setInterval(transitionTick, TYPING_SPEED_MS);
+	transitionTick(); // fire immediately for instant feedback
+}
+
+function transitionTick(): void {
+	if (transitionState === "erasing") {
+		transitionIdx--;
+		displayedPhrase = transitionIdx > 0 ? displayedPhrase.slice(0, transitionIdx) : "";
+		pushToUI(buildFullText(displayedPhrase));
+		if (transitionIdx <= 0) {
+			transitionState = "typing";
+			transitionIdx = 0;
+		}
+	} else if (transitionState === "typing") {
+		transitionIdx++;
+		displayedPhrase = targetPhrase.slice(0, transitionIdx);
+		pushToUI(buildFullText(displayedPhrase));
+		if (transitionIdx >= targetPhrase.length) {
+			// Transition complete
+			clearTransition();
+		}
+	}
+}
+
+function clearTransition(): void {
+	if (transitionIntervalId) {
+		clearInterval(transitionIntervalId);
+		transitionIntervalId = null;
+	}
+	transitionState = "idle";
+	displayedPhrase = "";
+	targetPhrase = "";
+	// Advance phrase index now that transition is fully done
+	phraseIndex = (phraseIndex + 1) % PHRASES.length;
+}
+
+function getPhraseText(): string {
+	if (transitionState !== "idle") return displayedPhrase;
+	return PHRASES[phraseIndex % PHRASES.length]!;
+}
+
+// ── Animation tick ─────────────────────────────────────────────────
+
+function tick(): void {
+	const star = paintStar(frameIndex);
+
+	// Start typewriter transition every 80 ticks (250ms × 80 = 20s), but only when idle
+	if (tickCount > 0 && tickCount % 80 === 0 && transitionState === "idle") {
+		const nextPhraseId = (phraseIndex + 1) % PHRASES.length;
+		startTransition(PHRASES[phraseIndex]!, PHRASES[nextPhraseId]!);
+	}
+
+	const phrase = getPhraseText();
+	pushToUI(buildFullText(phrase));
 
 	frameIndex++;
 	tickCount++;
 }
 
-function startSpinner(ctx: any): void {
-	// Clear any previous interval to prevent duplicates
-	stopSpinner();
+// ── Interval management ────────────────────────────────────────────
+
+/** Start (or restart) the spinner animation. Called on each before_agent_start. */
+function start(ctx: any): void {
+	// Clean up any lingering transition from previous run
+	clearTransition();
+
 	currentCtx = ctx;
 	startTime = Date.now();
 	phraseIndex = Math.floor(Math.random() * PHRASES.length);
 	frameIndex = 0;
 	tickCount = 0;
-	updateSpinner();
-	intervalId = setInterval(updateSpinner, 250);
+
+	// Hide the default braille spinner (⠸ etc.) — we use our own star animation
+	ctx.ui.setWorkingIndicator({ frames: [] });
+
+	if (intervalId !== null) {
+		tick();
+		return;
+	}
+
+	tick();
+	intervalId = setInterval(tick, 250);
 }
 
-function stopSpinner(): void {
+/** Stop the spinner animation. Called on agent_end and session_shutdown. */
+function stop(): void {
+	// Kill both intervals
+	clearTransition();
 	if (intervalId !== null) {
 		clearInterval(intervalId);
 		intervalId = null;
 	}
-	// Reset the pi core's working indicator to default
-	// (Passing undefined restores the default "Working..." message)
 	if (currentCtx?.hasUI) {
+		currentCtx.ui.setWorkingIndicator(undefined);
 		currentCtx.ui.setWorkingMessage(undefined);
 	}
 	(globalThis as any).__pi_spinner_text = "";
-	// Keep currentCtx alive — it's reused across before_agent_start calls within the same session.
-	// session_start will update it when the session changes.
 }
 
 // ── Extension entry ────────────────────────────────────────────────
@@ -275,27 +241,29 @@ export default function (pi: ExtensionAPI) {
 		description: "Animated star spinner with orange glow effect and fun Claude Code–style phrases",
 	});
 
-	// Capture the UI context from session_start (guaranteed to have full UI capabilities)
+	// Capture UI context — NO spinner yet, wait for actual LLM activity
 	pi.on("session_start", async (_event: any, ctx: any) => {
 		if (ctx.hasUI) {
 			currentCtx = ctx;
 		}
 	});
 
-	// Start spinner when the agent begins processing
+	// Start spinner when the LLM begins a thinking phase.
+	// This fires for each phase: initial response AND after tool call results.
 	pi.on("before_agent_start", async () => {
 		if (currentCtx) {
-			startSpinner(currentCtx);
+			start(currentCtx);
 		}
 	});
 
-	// Stop spinner when the message is complete
-	pi.on("message_end", () => {
-		stopSpinner();
+	// Stop spinner when the agent fully finishes (after all tool calls done).
+	pi.on("agent_end", async () => {
+		stop();
 	});
 
-	// Safety: stop on session end if anything is still running
+	// Full cleanup on session shutdown
 	pi.on("session_shutdown", () => {
-		stopSpinner();
+		stop();
+		currentCtx = null;
 	});
 }

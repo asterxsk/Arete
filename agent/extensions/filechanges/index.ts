@@ -164,13 +164,11 @@ async function ensureParentDir(absPath: string): Promise<void> {
 	// Per-tool-call snapshot, only committed on successful tool_result
 	const pendingByToolCallId = new Map<string, PendingSnapshot>();
 
-	let widgetHidden = false;
+	let widgetHidden = true;
 
 	function updateUi(ctx: any) {
 		if (!ctx?.hasUI) return;
 
-		const fcStatus = formatStatus(tracked, ctx.ui.theme);
-		ctx.ui.setStatus("filechanges", fcStatus);
 		// Expose raw counts for the statusline extension — dynamic rendering
 		let edited = 0, created = 0;
 		for (const t of tracked.values()) {
@@ -178,7 +176,11 @@ async function ensureParentDir(absPath: string): Promise<void> {
 			else edited++;
 		}
 		(globalThis as any).__pi_filechanges_counts = { edited, created };
-		if (!widgetHidden) {
+
+		const fcStatus = formatStatus(tracked, ctx.ui.theme);
+		ctx.ui.setStatus("filechanges", fcStatus);
+
+		if (!widgetHidden && tracked.size > 0) {
 			ctx.ui.setWidget("filechanges", buildWidgetLines(tracked, ctx.ui.theme), { order: 95 });
 		} else {
 			ctx.ui.setWidget("filechanges", undefined);

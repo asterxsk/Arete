@@ -1152,6 +1152,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "video_extract",
 		label: "Video Extract",
+		renderShell: "self",
 		description:
 			"Extract content from YouTube videos and local video files. Supports full video analysis via Gemini API, frame extraction at specific timestamps or ranges, and sampling frames across the entire video. When using Gemini analysis, pass a specific question via prompt for best results. This directs the AI to focus on that aspect of the video, producing much better results than a generic extraction.",
 		promptSnippet:

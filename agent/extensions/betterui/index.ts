@@ -54,29 +54,29 @@ export class CompactToolBox implements Component {
 		const lines: string[] = [];
 
 		const dot =
-			state === "pending" ? "\x1b[32m●\x1b[0m"
+			state === "pending" ? "\x1b[2m●\x1b[0m"
 			: state === "error" ? "\x1b[31m●\x1b[0m"
-			: "●";
+			: "\x1b[32m●\x1b[0m";
 
 		const nameStyled = `\x1b[38;2;255;165;0m${toolName}\x1b[0m`;
-		let header = `\x1b[49m${dot} \x1b[39m${nameStyled}`;
+let header = `${dot} ${nameStyled}`;
 		if (suffix) header += ` ${suffix}`;
 		lines.push(truncateToWidth(header, width));
 
 		if (expanded) {
 			// argsLine when expanded
 			if (argsLine) {
-				lines.push(truncateToWidth(`\x1b[49m  │ \x1b[38;5;244m${argsLine}\x1b[0m`, width));
+				lines.push(truncateToWidth(`  │ ${argsLine}`, width));
 			}
 			// Preview lines when expanded
 			if (previewLines && previewLines.length > 0) {
 				for (const pl of previewLines) {
-					lines.push(truncateToWidth(`\x1b[49m  │ \x1b[39m${pl}`, width));
+					lines.push(truncateToWidth(`  │ ${pl}`, width));
 				}
 			}
 			// Footer when expanded
 			if (footer) {
-				lines.push(truncateToWidth(`\x1b[49m  └ \x1b[39m${footer}\x1b[0m`, width));
+				lines.push(truncateToWidth(`  └ ${footer}`, width));
 			}
 		} else {
 			// Compact mode: args line indented below
@@ -84,7 +84,7 @@ export class CompactToolBox implements Component {
 			if (argsLine) detailParts.push(`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`);
 			if (footerAlways && footer) detailParts.push(footer);
 			detailParts.push("(ctrl+o to expand)");
-			lines.push(truncateToWidth(`\x1b[49m  └ \x1b[39m${detailParts.join("  ")}\x1b[0m`, width));
+			lines.push(truncateToWidth(`  └ ${detailParts.join("  ")}`, width));
 		}
 
 		this.cachedWidth = width;
@@ -117,7 +117,7 @@ export const emptyComponent = { render: () => [] as string[], invalidate() {}, h
 
 
 const RESET = "\x1b[0m";
-const BG = "\x1b[48;2;74;74;74m"; // #4A4A4A Lighter dark grey background
+const BG = "\x1b[48;2;55;55;55m"; // #373737 Dark grey background
 const BOLD_DARK = "\x1b[38;5;240m\x1b[1m"; // Dark grey bold prompt marker
 const TEXT_COLOR = "\x1b[38;5;250m"; // Light grey text
 
@@ -165,11 +165,9 @@ async function patchUserMessageComponent(): Promise<void> {
 				const padded = raw + " ".repeat(Math.max(0, maxLen - visLen));
 				
 				if (i === 0) {
-					// Add ❯ inside the background block
 					const contentWithBg = `${BG}${BOLD_DARK}❯ ${TEXT_COLOR}${padded} ${RESET}`;
 					result.push(contentWithBg);
 				} else {
-					// Add matching 2 spaces of indent inside the background block for other lines
 					const contentWithBg = `${BG}  ${TEXT_COLOR}${padded} ${RESET}`;
 					result.push(contentWithBg);
 				}

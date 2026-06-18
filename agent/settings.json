@@ -1,12 +1,12 @@
 {
-  "defaultModel": "auto",
-  "defaultProvider": "freerouter",
+  "defaultModel": "deepseek/deepseek-v4-flash",
+  "defaultProvider": "commandcode",
   "retry": {
     "provider": {
       "timeoutMs": 600000
     }
   },
-  "lastChangelogVersion": "0.79.4",
+  "lastChangelogVersion": "0.79.6",
   "packages": [
     "npm:pi-web-access",
     "git:github.com/DietrichGebert/ponytail"
@@ -30,10 +30,10 @@
     "freerouter/auto",
     "opencode/big-pickle",
     "opencode/nemotron-3-ultra-free",
-    "opencode/north-mini-code-free",
-    "commandcode/MiniMaxAI/MiniMax-M3",
     "commandcode/deepseek/deepseek-v4-flash",
-    "commandcode/xiaomi/mimo-v2.5"
+    "commandcode/zai-org/GLM-5.2",
+    "commandcode/moonshotai/Kimi-K2.7-Code",
+    "commandcode/moonshotai/Kimi-K2.7-Code-Highspeed"
   ],
   "terminal": {
     "showTerminalProgress": true

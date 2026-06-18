@@ -75,7 +75,8 @@ const pendingTimerNotifications: string[] = [];
 // Wraps tool output with any pending timer notifications so the LLM always sees fired timers
 function formatWithNotification(baseText: string): Array<{ type: "text"; text: string }> {
 	const pending = pendingTimerNotifications.splice(0);
-	if (pending.length === 0) return [{ type: "text", text: baseText }];const header = pending.length === 1
+	if (pending.length === 0) return [{ type: "text", text: baseText }];
+	const header = pending.length === 1
 					? ` Timer Fired! ${pending[0]}`
 					: ` ${pending.length} Timers Fired!\n${pending.map((m) => `  ${m}`).join("\n")}`;
 			return [{ type: "text", text: `${header}\n\n---\n${baseText}` }];
@@ -478,6 +479,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Schedule",
 		description: "Schedule a one-shot timer or a recurring cron job that sends notifications in the background.",
 		promptSnippet: "Schedule a timer. Fired timer notifications appear silently at the top of the next tool response.",
+		renderShell: "self",
 		parameters: Type.Object({
 			DurationSeconds: Type.Optional(Type.String({ description: "Duration in seconds (e.g. '300')" })),
 			CronExpression: Type.Optional(Type.String({ description: "Not supported natively. Use DurationSeconds." })),
