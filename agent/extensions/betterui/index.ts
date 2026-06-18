@@ -248,6 +248,10 @@ export default function (pi: ExtensionAPI) {
 					if (expanded) {
 						previewLines = output.replace(/^\n+/, "").split("\n").filter(l => l.trim());
 						argsLine = fullCmd;
+					} else {
+						// Show first error line in compact mode
+						const errorLine = allLines.find(l => l.includes("Error") || l.includes("error") || l.includes("not found"));
+						if (errorLine) argsLine = truncateCmd(errorLine, 60);
 					}
 					footer = "failed" + (timing ? " " + timing : "");
 				} else {
@@ -559,6 +563,63 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				return new CompactToolBox({ toolName: "ls", argsLine, previewLines, footer: lineCount + " entries", state: "done", expanded });
+			},
+		});
+	} catch {}
+
+	// ─── GLOB TOOL ──────────────────────────────────────────────────────────
+	// Alias for find with glob parameter - handles "glob" tool calls
+	try {
+		const originalFind = createFindTool(cwd);
+		pi.registerTool({
+			name: "glob",
+			label: "glob",
+			description: "Find files using glob patterns",
+			parameters: {
+				type: "object",
+				properties: {
+					pattern: { type: "string", description: "Glob pattern (e.g. **/*.ts)" },
+					path: { type: "string", description: "Directory to search in" },
+				},
+				required: ["pattern"],
+			},
+			renderShell: "self",
+			execute(toolCallId, params, signal, onUpdate) {
+				// Transform glob params to find params
+				const findParams = { pattern: params.pattern, path: params.path, glob: params.pattern };
+				return originalFind.execute(toolCallId, findParams, signal, onUpdate).then((r) => ({
+					...r, details: { ...(r.details ?? {}), _callArgs: params },
+				}));
+			},
+			renderCall() { return emptyComponent; },
+			renderResult(result, { isPartial, expanded }) {
+				if (isPartial) return new CompactToolBox({ toolName: "glob", argsLine: "searching...", state: "pending" });
+				const content = result.content[0];
+				const text = content?.type === "text" ? content.text : "";
+				if (result.isError || text.startsWith("Error")) return new CompactToolBox({ toolName: "glob", argsLine: text ? stripErrorPrefix(text) : "error", state: "error" });
+				if (!text) return new CompactToolBox({ toolName: "glob", argsLine: "no results", state: "error" });
+
+				const files = text.split("\n").filter((l) => l.trim());
+				const callArgs = (result.details as Record<string, unknown>)?._callArgs as Record<string, unknown> | undefined;
+				let globLine = "";
+				if (callArgs) {
+					let g = (callArgs.pattern as string) ?? "";
+					if (callArgs.path) g += "  " + callArgs.path;
+					globLine = g.length > 80 ? g.slice(0, 77) + "..." : g;
+				}
+
+				let previewLines: string[] | undefined;
+				let argsLine = globLine;
+				if (expanded) {
+					previewLines = files.map(l => l.length > 120 ? l.slice(0, 117) + "..." : l);
+					if (callArgs) {
+						let g = (callArgs.pattern as string) ?? "";
+						if (callArgs.path) g += "  " + callArgs.path;
+						argsLine = g;
+					}
+				}
+
+				return new CompactToolBox({ toolName: "glob", argsLine, previewLines, footer: files.length + " files", state: "done", expanded });
 			},
 		});
 	} catch {}

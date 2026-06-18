@@ -35,7 +35,7 @@
 
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Text, visibleWidth } from "@mariozechner/pi-tui";
+import { Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { CompactToolBox as CompactResult, emptyComponent } from "../betterui/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -200,60 +200,56 @@ function buildProgressBar(filled: number, total: number, segments = 10): string 
 function refreshWidget(ctx: any): void {
 	if (!ctx?.hasUI) return;
 
-	const hasTodos = todos.length > 0;
-	const spinnerText: string = (globalThis as any).__pi_spinner_text ?? "";
-	const hasSpinner = !!spinnerText;
-	const timersSummary: string = (globalThis as any).__pi_timers_summary ?? "";
-	const hasTimers = !!timersSummary;
-
-	// Nothing to show — unregister widget entirely (avoids empty line in layout)
-	if (!hasTodos && !hasSpinner && !hasTimers) {
-		ctx.ui.setWidget("toolkit-todos", undefined);
-		return;
-	}
-
+	// Always keep the widget registered so its render function picks up
+	// changes to __pi_filechanges_lines, __pi_timers_summary
+	// dynamically on each TUI render cycle. Never unregister.
+	// Spinner is shown by the TUI working message, not this widget.
 	ctx.ui.setWidget("toolkit-todos", (_tui: any) => ({
 		dispose() {},
-		invalidate() {},			render(width: number): string[] {
-				// Build todos text
-				let todosText = "";
+		invalidate() {},
+		render(width: number): string[] {
+			// Read all globals at render time
+			const timersSummary: string = (globalThis as any).__pi_timers_summary ?? "";
+			const fcLines: string[] = (globalThis as any).__pi_filechanges_lines ?? [];
+			const timersText = timersSummary ? `  \uf017 ${timersSummary}` : "";
+
+			let todosText = "";
 			if (todos.length > 0) {
 				const stats = getStats();
 				todosText = `\uf00b ${stats.completed}/${stats.total}`;
 			}
 
-				// Check if spinner is active (re-read in case it changed since widget registration)
-				const spText: string = (globalThis as any).__pi_spinner_text ?? "";
+			const hasSp = false; // spinner text is rendered by TUI's working message, not here
+			const hasTimers = !!timersSummary;
+			const hasTodos = !!todosText;
+			const hasFc = fcLines.length > 0;
 
-				// Check for timer countdown (from timers extension)
-				const timersSummary: string = (globalThis as any).__pi_timers_summary ?? "";
-				const timersText = timersSummary ? `  \uf017 ${timersSummary}` : "";
+			// Nothing to show — return empty so TUI skips this widget
+			if (!hasSp && !hasTimers && !hasTodos && !hasFc) return [];
 
-				// Check if anything to show
-				const hasSp = !!spText;
-				const hasTimers = !!timersSummary;
-				const hasTodos = !!todosText;
+			const lines: string[] = [];
 
-				if (!hasSp && !hasTimers && !hasTodos) return [];
+			// File changes at the top
+			for (const line of fcLines) {
+				lines.push(truncateToWidth(line, width));
+			}
 
-				// Build left part (spinner + timers)
-				const leftText = `${spText}${timersText}`;
+			// Timers + todos on next line (spinner is shown by TUI's working message)
+			if (timersText && todosText) {
+				const combined = timersText + todosText;
+				const visLen = visibleWidth(combined);
+				const pad = " ".repeat(Math.max(1, width - visLen));
+				lines.push(timersText + pad + todosText);
+			} else if (timersText) {
+				lines.push(timersText);
+			} else if (todosText) {
+				const visLen = visibleWidth(todosText);
+				const pad = " ".repeat(Math.max(1, width - visLen));
+				lines.push(pad + todosText);
+			}
 
-				if (leftText && todosText) {
-					// Left (spinner + timers) + pad + todos (right)
-					const combined = leftText + todosText;
-					const visLen = visibleWidth(combined);
-					const pad = " ".repeat(Math.max(1, width - visLen));
-					return [leftText + pad + todosText];
-				} else if (leftText) {
-					return [leftText];
-				} else {
-					// Todos only — right-aligned
-					const visLen = visibleWidth(todosText);
-					const pad = " ".repeat(Math.max(1, width - visLen));
-					return [pad + todosText];
-				}
-			},
+			return lines;
+		},
 	}), { order: 90 });
 }
 
@@ -444,7 +440,7 @@ export default function (pi: ExtensionAPI) {
 	// Self-register in global feature registry
 	(globalThis as any).__pi_extension_features?.push({
 		name: "todos",
-		description: "Track and monitor progress with todos — add, complete, start, remove items with categories and reminders",
+		description: "Track and monitor progress with todos — add, complete, start, remove items with categories and reminders. ALWAYS use todos to track any multi-step work with 2 or more tasks — create the list first, then work through it.",
 		commands: ["/todo"],
 		tools: ["todos"],
 		shortcuts: ["Ctrl+T"],

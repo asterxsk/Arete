@@ -63,13 +63,16 @@ The tree connectors (`│` `└`) are dimmed. Everything else is default termina
 
 | Tool | Name shown | Header shows | Footer shows |
 |------|-----------|-------------|-------------|
-| `bash` | `bash` | Command | `Took X.Xs` |
+| `bash` | `bash` | Command or error message | `Took X.Xs` or `failed` |
 | `read` | `read` | File path | Line count |
 | `write` | `write` | File path + line count | `Written` |
 | `edit` | `edit` | Path + diff stats | Truncation info |
 | `grep` | `grep` | Pattern + match count | Truncation info |
 | `find` | `find` | Pattern + file count | Truncation info |
+| `glob` | `glob` | Pattern + file count | Truncation info |
 | `ls` | `ls` | Entry count + first entry | Truncation info |
+
+**Error handling**: When a tool fails, the first error line (containing "Error", "error", or "not found") is shown in the header in compact mode. Expand with ctrl+O to see full output.
 
 ## How It Works
 

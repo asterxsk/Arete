@@ -18,7 +18,8 @@ git clone <your-repo-url> ~/.pi/agent
 ## Extension Features
 
 ### UI & Presentation
-* **BetterUI** (`betterui/`): Provides compact, tree-style tool renderers for commands (bash, read, write, edit, etc.) and improves custom user-message appearance.
+* **BetterUI** (`betterui/`): Provides compact, tree-style tool renderers for commands (bash, read, write, edit, grep, find, glob, ls) and improves custom user-message appearance.
+* **Better Compaction** (`better-compaction/`): Applies betterui tree-style rendering to compaction messages.
 * **Statusline** (`statusline/`): A dynamic footer that displays the active provider, model, token usage meter (color-coded for capacity), and active session events. 
 * **Header Bar** (`header/`): Adds a sleek banner header featuring ASCII art, a provider/model/version info panel, and a skills widget.
 * **Spinner Phrases** (`spinner-phrases/`): A dynamic, tool-aware loading spinner with gerund phrases and glow effects.
