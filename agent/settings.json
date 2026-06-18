@@ -1,6 +1,6 @@
 {
-  "defaultModel": "xiaomi/mimo-v2.5",
-  "defaultProvider": "commandcode",
+  "defaultModel": "gemma-4-E2B",
+  "defaultProvider": "llama",
   "retry": {
     "provider": {
       "timeoutMs": 600000
@@ -11,11 +11,11 @@
     "npm:pi-web-access",
     "git:github.com/DietrichGebert/ponytail"
   ],
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "quietStartup": true,
   "doubleEscapeAction": "tree",
   "theme": "arete",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "collapseChangelog": true,
   "followUpMode": "one-at-a-time",
   "themes": [

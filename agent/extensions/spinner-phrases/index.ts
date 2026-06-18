@@ -176,7 +176,7 @@ function start(ctx: any): void {
 	ctx.ui.setWorkingIndicator({ frames: [] });
 
 	tick();
-	intervalId = setInterval(tick, 250);
+	intervalId = setInterval(tick, 75);
 }
 
 function stop(): void {
