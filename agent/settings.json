@@ -1,21 +1,23 @@
 {
-  "defaultModel": "big-pickle",
+  "defaultModel": "nemotron-3-ultra-free",
   "defaultProvider": "opencode",
   "retry": {
     "provider": {
       "timeoutMs": 600000
     }
   },
-  "lastChangelogVersion": "0.79.9",
+  "lastChangelogVersion": "0.79.10",
   "packages": [
     "npm:pi-web-access",
-    "git:github.com/DietrichGebert/ponytail"
+    "git:github.com/DietrichGebert/ponytail",
+    "npm:@juicesharp/rpiv-todo",
+    "npm:pi-hermes-memory"
   ],
   "hideThinkingBlock": false,
   "quietStartup": true,
   "doubleEscapeAction": "tree",
   "theme": "arete",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "collapseChangelog": true,
   "followUpMode": "one-at-a-time",
   "themes": [
@@ -32,7 +34,6 @@
     "opencode/nemotron-3-ultra-free",
     "commandcode/deepseek/deepseek-v4-pro",
     "commandcode/deepseek/deepseek-v4-flash",
-    "commandcode/moonshotai/Kimi-K2.7-Code",
     "commandcode/zai-org/GLM-5.2"
   ],
   "terminal": {

@@ -24,7 +24,8 @@
     "green":    "#78e0a0",
     "orange":   "#f0a050",
     "purple":   "#bb88dd",
-    "pink":     "#ff88c8"
+    "pink":     "#ff88c8",
+    "darkGrey": "#1e1e24"
   },
   "colors": {
     "accent": "darkBlue",
@@ -44,10 +45,10 @@
     "customMessageBg": "bgSky",
     "customMessageText": "fg",
     "customMessageLabel": "darkBlue",
-    "toolPendingBg": "bg",
-    "toolSuccessBg": "bg",
-    "toolErrorBg": "bg",
-    "toolTitle": "blue",
+    "toolPendingBg": "darkGrey",
+    "toolSuccessBg": "darkGrey",
+    "toolErrorBg": "darkGrey",
+    "toolTitle": "fg",
     "toolOutput": "fg",
     "mdHeading": "blue",
     "mdLink": "blue",

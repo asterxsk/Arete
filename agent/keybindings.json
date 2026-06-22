@@ -1,4 +1,5 @@
 {
-  "app.thinking.toggle": ["ctrl+y"],
-  "app.tree.filter.noTools": ["ctrl+shift+n"]
+  "tui.input.submit": ["enter"],
+  "tui.input.newLine": ["shift+enter"],
+  "app.message.followUp": ["ctrl+enter"]
 }

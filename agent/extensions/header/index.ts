@@ -19,9 +19,10 @@ function paint(color: string, text: string): string {
 }
 
 /**
- * Color the banner all orange (#ffa500). Spaces stay untouched.
+ * Color the banner orange (#ffa500). Spaces stay untouched.
+ * ponytail: name is vestigial — was for a blackhole gradient.
  */
-function colorizeAsBlackhole(lines: string[]): string[] {
+function colorizeBanner(lines: string[]): string[] {
   return lines.map((line) => {
     let out = "";
     for (let col = 0; col < line.length; col++) {
@@ -37,7 +38,7 @@ function colorizeAsBlackhole(lines: string[]): string[] {
 }
 
 export function buildBannerArtLines(): string[] {
-  return ["  ▄▄▄▄▄▄▄  ", "  █▝███▝█  ∏", " ▀███▆███▀▀▀", "   ▘   ▝    ", ""];
+  return ["▝██████████▘", "   ██    ██", "   ██    ██", "  ▄██    ██▄"];
 }
 
 function composeSideBySide(
@@ -81,10 +82,7 @@ function buildInfoPanel(height: number): string[] {
   const model = infoModel || "—";
   const cwd = process.cwd();
 
-  const lines: string[] = [];
-  // Vertically center: push content roughly to the upper-middle of the banner
-  const padTop = Math.max(0, Math.floor((height - 5) / 2));
-  for (let i = 0; i < padTop; i++) lines.push("");
+  const lines: string[] = [""];
 
   lines.push(paint(ARETE, version));
   lines.push(paint(GREY, provider));
@@ -133,12 +131,12 @@ function countSkillDirs(): number {
   return count;
 }
 
-function createSkillsWidget(_tui: any) {
+function createInfoWidget(_tui: any) {
   return {
     dispose() {},
     invalidate() {},
     render(width: number): string[] {
-      const text = `${YELLOW}\u25cf ${countSkillDirs()} skills${RESET}`;
+      const text = `${YELLOW}\u25cf ${countSkillDirs()} info${RESET}`;
       const visLen = visibleWidth(text);
       const pad = " ".repeat(Math.max(1, width - visLen));
       return [pad + text];
@@ -153,7 +151,7 @@ export default function (pi: ExtensionAPI) {
   (globalThis as any).__pi_extension_features?.push({
     name: "header",
     description:
-      "ASCII-art banner header with version, provider, model, and skills count widget",
+      "ASCII-art banner header with version, provider, model, and info widget",
   });
 
   pi.on("session_start", async (_event, ctx) => {
@@ -166,7 +164,7 @@ export default function (pi: ExtensionAPI) {
       return {
         render(width: number): string[] {
           const rawLines = buildBannerArtLines();
-          const bannerLines = colorizeAsBlackhole(rawLines);
+          const bannerLines = colorizeBanner(rawLines);
           const infoLines = buildInfoPanel(bannerLines.length);
           return composeSideBySide(bannerLines, infoLines).map((line) =>
             truncateToWidth(line, width),

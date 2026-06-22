@@ -1,0 +1,3 @@
+[tool-quirk] PowerShell on Windows emits CLIXML progress records (e.g., "Preparing modules for first use.") as XML objects into stdout when piped. These `<Objs><Obj S="progress">...</Obj></Objs>` fragments pollute command output and must be filtered out. The CLIXML output also masks real errors. Use `-ErrorAction SilentlyContinue` and consider `--%` or `pwsh -NoProfile -Command` to reduce noise. <!-- created=2026-06-22, last=2026-06-22 -->
+§
+[failure] Trying to read C:\Users\prithish\.pi\settings.json failed — the file does not exist. Did not crash anything, but wasted commands. Should verify path existence before reading. <!-- created=2026-06-22, last=2026-06-22 -->

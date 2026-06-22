@@ -1,40 +1,28 @@
 # header
 
-The pi header: a blackhole-themed ascii-art banner on the left, a
-loaded-extensions box on the right, and a `● N skills` widget above
-the input area.
+The pi header: an orange ascii-art banner on the left, an
+info panel on the right showing version, provider, model, and working
+directory, and a `● N skills` widget above the input area.
 
 ## What it renders
 
 ```
                                                                               ● 77 skills
-                                       +- extensions (16) ---------+
-[blackhole art — surreal ripple]       | agents                    │
-[black core → orange mid → yellow rim] | context                   │
-[the colour bands undulate like        | ...                       │
- a cosmic interference pattern]        |                           │
-                                       +---------------------------+
+▝██████████▘                          Arete v2.6.1
+  ██    ██                                provider
+  ██    ██                                model
+ ▄██    ██▄                               /path/to/working/dir
 ```
 
-The blackhole has a **surreal three-tone gradient**:
+The banner uses a **solid orange** (#ffa500) color for all non-space
+characters. Whitespace cells stay uncolored so the silhouette reads
+against the terminal background.
 
-- **Core**      → **black**  — the singularity
-- **Mid band**  → **orange** — inner accretion disk
-- **Outer edge** → **yellow** — corona / strange glow
-
-A sine-wave interference pattern ripples the colour boundaries
-horizontally so the bands never lie flat — dreamlike, cosmic,
-slightly unsettling.
-
-Whitespace cells stay uncolored so the silhouette reads against the
-terminal background. The character itself is preserved; only the
-surrounding ANSI color changes.
-
-The extensions box uses **90-degree corners** (ASCII `+`, `-`, `|`)
-with an **orange** border and title, and **white** folder names.
-
-The extensions box uses **orange** for the border and the title, and
-**white** for the folder names.
+The info panel on the right shows:
+- **Version** (orange)
+- **Provider** (grey)
+- **Model** (grey)
+- **Working directory** (grey)
 
 The skills widget above the input area reads both `~/.pi/agent/skills`
 and `~/.agents/skills`, counting each subfolder that has a `SKILL.md`.

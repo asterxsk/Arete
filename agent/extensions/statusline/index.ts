@@ -101,15 +101,16 @@ function smoothContextColor(pct: number): string {
 	return lerpRgb(COLOR_STOPS[0]!.rgb, COLOR_STOPS[0]!.rgb, 0);
 }
 
+const WHITE = toHex([255, 255, 255]);
+
 // ── Gradient context visual bar ───────────────────────────────────────
 
 function buildGradientBar(percent: number, segments = 8): string {
 	const clamped = Math.max(0, Math.min(100, Math.round(percent)));
 	const filled = Math.round((clamped / 100) * segments);
-	const color = smoothContextColor(clamped);
 	let result = "";
 	for (let i = 0; i < segments; i++) {
-		result += i < filled ? color + "█" + RESET : "░";
+		result += i < filled ? WHITE + "█" + RESET : "░";
 	}
 	return result;
 }
@@ -179,16 +180,15 @@ export default function (pi: ExtensionAPI) {
 
 					// ── Right: context bar + file changes ──────────
 					const bar = buildGradientBar(contextPercent);
-					const barColor = smoothContextColor(contextPercent);
 					const tokenStr = contextWindow > 0
 						? `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`
 						: `${formatTokens(contextTokens)}`;
 					const ctxPart = "\uf080"
 						+ " [" + bar + "] "
-						+ paint(barColor, tokenStr);
+						+ paint(WHITE, tokenStr);
 
 					const compactCue = contextPercent > 90
-						? "  " + paint(C.red, "\uf06a") + " " + paint(C.red, "compact!")
+						? "  " + paint(C.red, "\uf06a") + " " + paint(WHITE, "compact!")
 						: "";
 
 					const counts = (globalThis as any).__pi_filechanges_counts as

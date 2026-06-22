@@ -969,7 +969,36 @@ export default function (pi: ExtensionAPI) {
 		// ── Render: result ──
 		renderResult(result, { isPartial, expanded }) {
 			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
-			if (isPartial) return new CompactToolBox({ toolName: "subagent", argsLine: "running...", state: "pending" });
+			if (isPartial) {
+			const details = result.details as Details | undefined;
+
+			if (details?.mode === "parallel" && details.results.length > 1) {
+				const names = details.results.map((r) => r.agent).join(", ");
+				const running = details.results.filter((r) => r.progress?.status === "running").length;
+				const done = details.results.filter((r) => r.progress?.status === "completed").length;
+				const argsLine = `${done}/${details.results.length} tasks`;
+				return new CompactToolBox({
+					toolName: "subagent",
+					argsLine,
+					state: "pending",
+				});
+			}
+
+			const r = details?.results?.[0];
+			const agentName = r?.agent || "subagent";
+			let statusText = "working";
+			if (r?.progress?.currentTool) {
+				statusText = "tools";
+			} else if (r?.progress?.lastMessage) {
+				statusText = "thinking";
+			}
+
+			return new CompactToolBox({
+				toolName: agentName,
+				argsLine: statusText,
+				state: "pending",
+			});
+		}
 			const details = result.details as Details | undefined;
 			if (!details?.results?.length) {
 				const t = result.content[0];
