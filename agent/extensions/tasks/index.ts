@@ -41,7 +41,51 @@ import { spawn } from "node:child_process";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Input, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { CompactToolBox as CompactResult, emptyComponent } from "../betterui/index.js";
+import type { Component } from "@mariozechner/pi-tui";
+
+// ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
+interface _CBOpts {
+	toolName: string;
+	argsLine: string;
+	footer?: string;
+	state: "pending" | "done" | "error";
+	previewLines?: string[];
+	expanded?: boolean;
+	footerAlways?: boolean;
+	suffix?: string;
+}
+
+class CompactResult implements Component {
+	private opts: _CBOpts;
+	private cachedWidth?: number;
+	private cachedLines?: string[];
+	constructor(opts: _CBOpts) { this.opts = opts; }
+	invalidate(): void { this.cachedWidth = undefined; this.cachedLines = undefined; }
+	render(width: number): string[] {
+		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways } = this.opts;
+		const lines: string[] = [];
+		const dot = state === "pending" ? "\x1b[2m●\x1b[0m" : state === "error" ? "\x1b[31m●\x1b[0m" : "\x1b[32m●\x1b[0m";
+		let header = `${dot} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
+		if (suffix) header += ` ${suffix}`;
+		lines.push(truncateToWidth(header, width));
+		if (expanded) {
+			if (argsLine) lines.push(truncateToWidth(`  │ ${argsLine}`, width));
+			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${pl}`, width));
+			if (footer) lines.push(truncateToWidth(`  └ ${footer}`, width));
+		} else {
+			// Single-line compact mode
+			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
+			header += ` ${parts.join(" ")}`;
+			lines[0] = truncateToWidth(header, width);
+		}
+		this.cachedWidth = width;
+		this.cachedLines = lines;
+		return lines;
+	}
+}
+
+const emptyComponent = { render: () => [] as string[], invalidate() {}, handleInput() {} };
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -598,6 +642,7 @@ export default function (pi: ExtensionAPI) {
 		renderShell: "self",
 		renderCall() { return emptyComponent; },
 		renderResult(result, { isPartial, expanded }) {
+			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 			if (isPartial) return new CompactResult({ toolName: "run_command", argsLine: "running...", state: "pending" });
 			const content = result.content[0];
 			const text = content?.type === "text" ? content.text : "";
@@ -698,6 +743,7 @@ export default function (pi: ExtensionAPI) {
 		renderShell: "self",
 		renderCall() { return emptyComponent; },
 		renderResult(result, { isPartial, expanded }) {
+			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 			if (isPartial) return new CompactResult({ toolName: "manage_task", argsLine: "managing...", state: "pending" });
 			const content = result.content[0];
 			const text = content?.type === "text" ? content.text : "";

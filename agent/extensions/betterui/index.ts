@@ -32,6 +32,7 @@ interface CTBOptions {
 	previewLines?: string[];
 	expanded?: boolean;
 	footerAlways?: boolean;
+	suffix?: string;
 }
 
 export class CompactToolBox implements Component {
@@ -59,7 +60,7 @@ export class CompactToolBox implements Component {
 			: "\x1b[32m●\x1b[0m";
 
 		const nameStyled = `\x1b[38;2;255;165;0m${toolName}\x1b[0m`;
-let header = `${dot} ${nameStyled}`;
+		let header = `${dot} ${nameStyled}`;
 		if (suffix) header += ` ${suffix}`;
 		lines.push(truncateToWidth(header, width));
 
@@ -79,12 +80,10 @@ let header = `${dot} ${nameStyled}`;
 				lines.push(truncateToWidth(`  └ ${footer}`, width));
 			}
 		} else {
-			// Compact mode: args line indented below
-			const detailParts: string[] = [];
-			if (argsLine) detailParts.push(`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`);
-			if (footerAlways && footer) detailParts.push(footer);
-			detailParts.push("(ctrl+o to expand)");
-			lines.push(truncateToWidth(`  └ ${detailParts.join("  ")}`, width));
+			// Single-line compact mode
+			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
+			header += ` ${parts.join(" ")}`;
+			lines[0] = truncateToWidth(header, width);
 		}
 
 		this.cachedWidth = width;
@@ -187,10 +186,24 @@ async function patchUserMessageComponent(): Promise<void> {
 	}
 }
 
+// ── Global toggle ─────────────────────────────────────────────────────
+(globalThis as any).__pi_betterui_enabled = true;
+
 export default function (pi: ExtensionAPI) {
 	(globalThis as any).__pi_extension_features?.push({
 		name: "betterui",
 		description: "Compact tree-style tool renderers for bash, read, write, edit, grep, find, and ls",
+		commands: ["/betterui"],
+	});
+
+	// ── /betterui command: toggle compact rendering ───────────────────
+	pi.registerCommand("betterui", {
+		description: "Toggle compact tool rendering on/off",
+		handler: async (_args, ctx) => {
+			(globalThis as any).__pi_betterui_enabled = !(globalThis as any).__pi_betterui_enabled;
+			const state = (globalThis as any).__pi_betterui_enabled ? "on" : "off";
+			ctx.ui.notify?.(`Compact tool rendering: ${state}`, state === "on" ? "success" : "info");
+		},
 	});
 
 	// Patch user message appearance on session_start (core modules guaranteed loaded)
@@ -227,6 +240,7 @@ export default function (pi: ExtensionAPI) {
 				const details = result.details as BashToolDetails & { _bashDurationMs?: number; _command?: string };
 				const content = result.content[0];
 				const output = content?.type === "text" ? content.text : "";
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "bash", argsLine: "running...", state: "pending" });
 
 				const exitMatch = output.match(/\n?exit code: (\d+)/);
@@ -288,6 +302,7 @@ export default function (pi: ExtensionAPI) {
 			renderCall() { return emptyComponent; },
 
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "read", argsLine: "reading...", state: "pending" });
 				const details = result.details as ReadToolDetails | undefined;
 				const content = result.content[0];
@@ -338,6 +353,7 @@ export default function (pi: ExtensionAPI) {
 			renderCall() { return emptyComponent; },
 
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "write", argsLine: "writing...", state: "pending" });
 				const content = result.content[0];
 				if (content?.type === "text" && content.text.startsWith("Error")) {
@@ -376,6 +392,7 @@ export default function (pi: ExtensionAPI) {
 			renderCall() { return emptyComponent; },
 
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "edit", argsLine: "applying...", state: "pending" });
 				const content = result.content[0];
 				const isError = result.isError;
@@ -443,6 +460,7 @@ export default function (pi: ExtensionAPI) {
 			renderCall() { return emptyComponent; },
 
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "grep", argsLine: "searching...", state: "pending" });
 				const content = result.content[0];
 				const text = content?.type === "text" ? content.text : "";
@@ -495,6 +513,7 @@ export default function (pi: ExtensionAPI) {
 			renderCall() { return emptyComponent; },
 
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "find", argsLine: "searching...", state: "pending" });
 				const content = result.content[0];
 				const text = content?.type === "text" ? content.text : "";
@@ -544,6 +563,7 @@ export default function (pi: ExtensionAPI) {
 			renderCall() { return emptyComponent; },
 
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "ls", argsLine: "listing...", state: "pending" });
 				const content = result.content[0];
 				const text = content?.type === "text" ? content.text : "";
@@ -593,6 +613,7 @@ export default function (pi: ExtensionAPI) {
 			},
 			renderCall() { return emptyComponent; },
 			renderResult(result, { isPartial, expanded }) {
+				if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 				if (isPartial) return new CompactToolBox({ toolName: "glob", argsLine: "searching...", state: "pending" });
 				const content = result.content[0];
 				const text = content?.type === "text" ? content.text : "";

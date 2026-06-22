@@ -1,17 +1,78 @@
 /**
  * Minimal subagents extension.
  *
- * Registers a single `subagent` tool with three agents: scout, researcher, worker.
- * Supports single and parallel execution. Output is verbal only (no file handoff).
+ * Registers a single `subagent` tool with agents loaded from .md files.
+ * Supports single and parallel execution.
+ *
+ * The model used for subagents is set via the `/sub` command — agents
+ * CANNOT specify a model themselves.
  */
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import * as os from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { parseFrontmatter, truncateHead, withFileMutationQueue, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@mariozechner/pi-coding-agent";
-import { CompactToolBox, emptyComponent } from "../betterui/index.js";
+import { parseFrontmatter, truncateHead, withFileMutationQueue, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, getAgentDir } from "@mariozechner/pi-coding-agent";
+import { Input, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@mariozechner/pi-tui";
+
+// ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
+interface _CBOpts {
+	toolName: string;
+	argsLine: string;
+	footer?: string;
+	state: "pending" | "done" | "error";
+	previewLines?: string[];
+	expanded?: boolean;
+	footerAlways?: boolean;
+	suffix?: string;
+}
+
+class CompactToolBox implements Component {
+	private opts: _CBOpts;
+	private cachedWidth?: number;
+	private cachedLines?: string[];
+	constructor(opts: _CBOpts) { this.opts = opts; }
+	invalidate(): void { this.cachedWidth = undefined; this.cachedLines = undefined; }
+	render(width: number): string[] {
+		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways } = this.opts;
+		const lines: string[] = [];
+		const dot = state === "pending" ? "\x1b[2m●\x1b[0m" : state === "error" ? "\x1b[31m●\x1b[0m" : "\x1b[32m●\x1b[0m";
+		let header = `${dot} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
+		if (suffix) header += ` ${suffix}`;
+		lines.push(truncateToWidth(header, width));
+		if (expanded) {
+			if (argsLine) lines.push(truncateToWidth(`  │ ${argsLine}`, width));
+			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${pl}`, width));
+			if (footer) lines.push(truncateToWidth(`  └ ${footer}`, width));
+		} else {
+			// Single-line compact mode
+			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
+			header += ` ${parts.join(" ")}`;
+			lines[0] = truncateToWidth(header, width);
+		}
+		this.cachedWidth = width;
+		this.cachedLines = lines;
+		return lines;
+	}
+}
+
+const emptyComponent = { render: () => [] as string[], invalidate() {}, handleInput() {} };
 import { Type } from "typebox";
+
+// ── Subagent Model Storage ──────────────────────────────────────────────
+// Stored globally so the /sub command and the subagent tool share state.
+
+const SUBAGENT_MODEL_KEY = "__pi_subagent_model_v1";
+
+function getSubagentModel(): string | undefined {
+	return (globalThis as any)[SUBAGENT_MODEL_KEY];
+}
+
+function setSubagentModel(model: string): void {
+	(globalThis as any)[SUBAGENT_MODEL_KEY] = model;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -19,7 +80,6 @@ export interface AgentConfig {
 	name: string;
 	description: string;
 	tools: string[];
-	model: string;
 	systemPrompt: string;
 	filePath: string;
 }
@@ -135,7 +195,6 @@ function loadAgentFiles(agentDir: string, existingNames: Set<string>): AgentConf
 			name: frontmatter.name,
 			description: frontmatter.description || "",
 			tools,
-			model: frontmatter.model || "auto",
 			systemPrompt: body,
 			filePath,
 		});
@@ -184,13 +243,27 @@ function formatDuration(ms: number): string {
 	return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
 }
 
+// ── Resolve the model to use for a subagent ──────────────────────────
+
+function resolveSubagentModel(parentModel: string | undefined): string {
+	// 1. User-set model via /sub command
+	const stored = getSubagentModel();
+	if (stored && stored !== "auto") return stored;
+
+	// 2. Parent session's model
+	if (parentModel) return parentModel;
+
+	// 3. Fallback
+	return "auto";
+}
+
 // ── Subagent Execution ────────────────────────────────────────────────
 
 async function buildPiArgs(
 	agent: AgentConfig,
 	task: string,
 	cwd: string,
-	modelOverride?: string,
+	model: string,
 ): Promise<{ args: string[]; tempDir: string }> {
 	const piBin = resolvePiBinary();
 	const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-sub-"));
@@ -235,7 +308,7 @@ async function buildPiArgs(
 		}
 	}
 
-	args.push("--models", modelOverride || agent.model);
+	args.push("--models", model);
 	args.push("--append-system-prompt", promptPath);
 
 	// Handle long tasks by writing to file
@@ -279,11 +352,11 @@ async function runSubagent(
 	agent: AgentConfig,
 	task: string,
 	cwd: string,
+	model: string,
 	signal: AbortSignal | undefined,
 	onUpdate?: (progress: AgentProgress) => void,
-	modelOverride?: string,
 ): Promise<AgentResult> {
-	const { args, tempDir } = await buildPiArgs(agent, task, cwd, modelOverride);
+	const { args, tempDir } = await buildPiArgs(agent, task, cwd, model);
 	const command = args[0];
 	const spawnArgs = args.slice(1);
 
@@ -292,7 +365,7 @@ async function runSubagent(
 		task,
 		output: "",
 		exitCode: 0,
-		model: modelOverride || agent.model,
+		model,
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
 		progress: {
 			agent: agent.name,
@@ -496,31 +569,274 @@ async function mapConcurrent<T, R>(
 	return results;
 }
 
+// ── Load known models for autocomplete suggestions ───────────────────
+// Merge enabledModels (settings.json) + all provider models (models.json).
+// This is best-effort — user can still type any model name.
+
+const AGENT_DIR = getAgentDir();
+
+function loadSuggestions(): string[] {
+	const models = new Set<string>();
+
+	// 1. enabledModels from settings.json (covers packages)
+	try {
+		const sp = path.join(AGENT_DIR, "settings.json");
+		if (fs.existsSync(sp)) {
+			const raw = JSON.parse(fs.readFileSync(sp, "utf-8"));
+			const enabled = raw.enabledModels;
+			if (Array.isArray(enabled)) {
+				for (const m of enabled) {
+					if (typeof m === "string") models.add(m);
+				}
+			}
+		}
+	} catch {}
+
+	// 2. All provider models from models.json (covers provider configs)
+	try {
+		const mp = path.join(AGENT_DIR, "models.json");
+		if (fs.existsSync(mp)) {
+			const raw = JSON.parse(fs.readFileSync(mp, "utf-8"));
+			const providers = raw.providers;
+			if (providers && typeof providers === "object") {
+				for (const [pid, pv] of Object.entries(providers)) {
+					const pModels = (pv as any).models;
+					if (!Array.isArray(pModels)) continue;
+					for (const m of pModels) {
+						if (m && typeof m.id === "string") {
+							models.add(`${pid}/${m.id}`);
+						}
+					}
+				}
+			}
+		}
+	} catch {}
+
+	return [...models].sort();
+}
+
+// ── Autocomplete Component ────────────────────────────────────────────
+// Text input with live-filtered model suggestions.
+
+const MAX_VISIBLE_SUGGESTIONS = 8;
+
+class SubagentAutocompleteComponent {
+	private readonly input: Input;
+	private readonly allModels: string[];
+	private filtered: string[] = [];
+	private selectedIdx = 0;
+	private lastInputValue = "";
+	public onDone: ((result: string | null) => void) | undefined;
+
+	constructor(
+		private readonly tui: { requestRender: () => void },
+		private readonly theme: {
+			fg: (name: string, text: string) => string;
+			bold: (text: string) => string;
+		},
+		initialValue: string,
+	) {
+		this.allModels = loadSuggestions();
+		this.input = new Input();
+		this.input.setValue(initialValue);
+		this.lastInputValue = initialValue;
+		this.input.onSubmit = (value) => {
+			// If there's a highlighted suggestion, use it
+			if (this.filtered.length > 0 && this.selectedIdx < this.filtered.length) {
+				this.onDone?.(this.filtered[this.selectedIdx]);
+			} else {
+				const trimmed = value.trim();
+				if (trimmed) {
+					this.onDone?.(trimmed);
+				}
+			}
+		};
+		this.input.onEscape = () => {
+			this.onDone?.(null);
+		};
+		this.updateFilter();
+	}
+
+	get focused(): boolean {
+		return this.input.focused;
+	}
+
+	set focused(v: boolean) {
+		this.input.focused = v;
+	}
+
+	private updateFilter(): void {
+		const query = this.input.value.toLowerCase();
+		if (!query) {
+			this.filtered = [];
+		} else {
+			this.filtered = this.allModels.filter((m) => m.toLowerCase().includes(query));
+		}
+		this.selectedIdx = 0;
+	}
+
+	handleInput(data: string): void {
+		// ↑↓ navigate suggestions (don't set input value)
+		if (matchesKey(data, Key.down)) {
+			if (this.filtered.length > 0) {
+				this.selectedIdx = Math.min(this.filtered.length - 1, this.selectedIdx + 1);
+				this.tui.requestRender();
+			}
+			return;
+		}
+		if (matchesKey(data, Key.up)) {
+			if (this.filtered.length > 0) {
+				this.selectedIdx = Math.max(0, this.selectedIdx - 1);
+				this.tui.requestRender();
+			}
+			return;
+		}
+
+		// Let Input handle text entry, backspace, enter, escape
+		this.input.handleInput(data);
+
+		// If value changed, update filter
+		if (this.input.value !== this.lastInputValue) {
+			this.lastInputValue = this.input.value;
+			this.updateFilter();
+		}
+
+		this.tui.requestRender();
+	}
+
+	render(width: number): string[] {
+		const lines: string[] = [];
+		const add = (text: string) => lines.push(truncateToWidth(text, width));
+		const arrow = this.theme.fg("accent", "─".repeat(Math.max(0, width - 1)));
+
+		add(arrow);
+		add(this.theme.fg("accent", this.theme.bold(" Subagent Model")));
+		lines.push("");
+
+		// Input field
+		const inputLines = this.input.render(Math.max(8, width - 4));
+		for (const line of inputLines) {
+			add(` ${line}`);
+		}
+
+		// Suggestions
+		if (this.filtered.length > 0) {
+			lines.push("");
+			const total = this.filtered.length;
+			const half = Math.floor(MAX_VISIBLE_SUGGESTIONS / 2);
+			const start = Math.max(0, Math.min(this.selectedIdx - half, total - MAX_VISIBLE_SUGGESTIONS));
+			const end = Math.min(total, start + MAX_VISIBLE_SUGGESTIONS);
+
+			if (start > 0) {
+				add(this.theme.fg("dim", ` ↑ ${start} more...`));
+			}
+			for (let i = start; i < end; i++) {
+				const selected = i === this.selectedIdx;
+				const marker = selected ? this.theme.fg("accent", "▸ ") : "  ";
+				const label = selected
+					? this.theme.fg("accent", this.filtered[i])
+					: this.theme.fg("text", this.filtered[i]);
+				add(`${marker}${label}`);
+			}
+			if (end < total) {
+				add(this.theme.fg("dim", ` ↓ ${total - end} more...`));
+			}
+		} else if (this.input.value.trim()) {
+			lines.push("");
+			add(this.theme.fg("dim", " (no matching models)"));
+		}
+
+		lines.push("");
+		add(this.theme.fg("dim", "Type to filter · ↑↓ navigate · Enter select · Esc cancel"));
+		add(arrow);
+		return lines;
+	}
+
+	invalidate(): void {
+		this.input.invalidate();
+	}
+}
+
 // ── Extension ─────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
 	// Self-register in global feature registry
 	(globalThis as any).__pi_extension_features?.push({
 		name: "subagents",
-		description: "Run isolated child pi processes with predefined agents (scout, researcher, worker) or custom agent .md files",
+		description: "Run isolated child pi processes with predefined agents or custom agent .md files",
 		tools: ["subagent"],
+		commands: ["/sub"],
 	});
 
 	const config = loadConfig();
 	const maxConcurrency = config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
 	agents = loadAgents();
 
+	// ── Command: /sub ────────────────────────────────
+	pi.registerCommand("sub", {
+		description: "Set model for subagents. /sub <model> to set, /sub alone opens interactive picker.",
+		handler: async (_args, ctx) => {
+			const current = getSubagentModel() || "auto";
+			const args = typeof _args === "string" ? _args.trim() : "";
+
+			if (args) {
+				setSubagentModel(args);
+				ctx.ui.notify?.(`Subagents will use: ${args}`, "success");
+				return;
+			}
+
+			if (!ctx.hasUI) {
+				const sessionModel = ctx.model
+					? `${(ctx.model as any).provider}/${(ctx.model as any).id}`
+					: "unknown";
+				ctx.ui.notify?.(
+					`Subagent model: ${current} (session: ${sessionModel}). Usage: /sub <model>`,
+					"info",
+				);
+				return;
+			}
+
+			// Interactive mode: open autocomplete dialog
+			while (true) {
+				const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+					const component = new SubagentAutocompleteComponent(tui, theme, current);
+					component.onDone = done;
+					component.focused = true;
+					return component;
+				});
+
+				if (result === null) {
+					ctx.ui.notify?.("Subagent model unchanged.", "info");
+					return;
+				}
+
+				const trimmed = result.trim();
+				if (!trimmed) {
+					ctx.ui.notify?.("Model cannot be empty.", "error");
+					continue;
+				}
+
+				setSubagentModel(trimmed);
+				ctx.ui.notify?.(`Subagents will use: ${trimmed}`, "success");
+				return;
+			}
+		},
+	});
+
+	// ── Tool: subagent ─────────────────────────────
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
 		description:
-			"Run a subagent to complete a task. Subagents have NO context from the current conversation — include all necessary context in the task description.",
+			"Run a subagent to complete a task. Subagents have NO context from the current conversation — include all necessary context in the task description. " +
+			"The model for subagents is set via the /sub command — the agent cannot override it.",
 		promptSnippet: "Run subagents for delegated tasks",
 		promptGuidelines: [
 			"Parallel tool calls are your primary parallelism mechanism — put multiple independent read/fetch/search calls in one function_calls block. Don't use subagents to parallelize simple I/O.",
 			"Use subagent to delegate *reasoning and decisions*: codebase exploration (scout), web research (researcher), or isolated code changes (worker)",
 			"For multiple independent subagent tasks, use parallel mode with tasks[] array",
 			"Subagents have NO context from the current conversation — include ALL necessary context in the task description",
+			"The model for subagents is set via the /sub command and cannot be overridden in the tool call.",
 		],
 		parameters: Type.Object({
 			agent: Type.Optional(
@@ -533,10 +849,9 @@ export default function (pi: ExtensionAPI) {
 					Type.Object({
 						agent: Type.String({ description: "Name of the agent to invoke" }),
 						task: Type.String({ description: "Task description" }),
-						model: Type.Optional(Type.String({ description: "Override model (e.g. 'freerouter/auto'). Uses parent session's model if not set." })),
 						cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 					}),
-					{ description: "PARALLEL mode: array of {agent, task, model} objects" },
+					{ description: "PARALLEL mode: array of {agent, task} objects" },
 				),
 			),
 			cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
@@ -544,7 +859,8 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const cwd = ctx.cwd;
-			const parentModel = ctx.model?.id;
+			const parentModel = ctx.model ? `${(ctx.model as any).provider}/${ctx.model.id}` : undefined;
+			const resolvedModel = resolveSubagentModel(parentModel);
 
 			// Validate mode
 			if (params.tasks && params.tasks.length > 0) {
@@ -587,10 +903,10 @@ export default function (pi: ExtensionAPI) {
 
 				const results = await mapConcurrent(taskList, maxConcurrency, async (t, idx) => {
 					const agent = agents.find((a) => a.name === t.agent)!;
-					const result = await runSubagent(agent, t.task, t.cwd ?? cwd, signal, (progress) => {
+					const result = await runSubagent(agent, t.task, t.cwd ?? cwd, resolvedModel, signal, (progress) => {
 						allResults[idx].progress = progress;
 						fireParallelUpdate();
-					}, (t as any).model || parentModel || agent.model);
+					});
 
 					// Update allResults with the completed result so the UI reflects it immediately
 					allResults[idx] = result;
@@ -622,17 +938,17 @@ export default function (pi: ExtensionAPI) {
 					task: params.task!,
 					output: "",
 					exitCode: -1,
-					model: params.model || parentModel || agent.model,
+					model: resolvedModel,
 					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
 					progress: { agent: params.agent!, status: "running" as const, task: params.task!, recentTools: [], toolCount: 0, tokens: 0, durationMs: 0, lastMessage: "" },
 				};
-				const result = await runSubagent(agent, params.task, params.cwd ?? cwd, signal, (progress) => {
+				const result = await runSubagent(agent, params.task, params.cwd ?? cwd, resolvedModel, signal, (progress) => {
 					liveResult.progress = progress;
 					onUpdate?.({
 						content: [{ type: "text", text: "(running...)" }],
 						details: { mode: "single" as const, results: [liveResult] },
 					});
-				}, params.model || parentModel || agent.model);
+				});
 
 				const isError = result.exitCode !== 0 || !!result.progress.error;
 				return {
@@ -652,6 +968,7 @@ export default function (pi: ExtensionAPI) {
 
 		// ── Render: result ──
 		renderResult(result, { isPartial, expanded }) {
+			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 			if (isPartial) return new CompactToolBox({ toolName: "subagent", argsLine: "running...", state: "pending" });
 			const details = result.details as Details | undefined;
 			if (!details?.results?.length) {
@@ -742,5 +1059,21 @@ export default function (pi: ExtensionAPI) {
 				});
 			}
 		},
+	});
+
+	// ── Inject agent list into system prompt ───
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "default";
+		const subagentModel = getSubagentModel() || `inherited (${currentModel})`;
+		const list = agents
+			.map((a) => {
+				return `- ${a.name}: ${a.description}`;
+			})
+			.join("\n");
+		return {
+			systemPrompt:
+				_event.systemPrompt +
+				`\n\n## Available Subagents\nUse the \`subagent\` tool to delegate tasks to these specialized agents:\n${list}\n\nSubagents run with the model set via the \`/sub\` command (current: ${subagentModel}). Agents cannot specify their own model.`,
+		};
 	});
 }

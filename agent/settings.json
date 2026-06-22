@@ -1,12 +1,12 @@
 {
-  "defaultModel": "gemma-4-E2B",
-  "defaultProvider": "llama",
+  "defaultModel": "big-pickle",
+  "defaultProvider": "opencode",
   "retry": {
     "provider": {
       "timeoutMs": 600000
     }
   },
-  "lastChangelogVersion": "0.79.6",
+  "lastChangelogVersion": "0.79.9",
   "packages": [
     "npm:pi-web-access",
     "git:github.com/DietrichGebert/ponytail"
@@ -15,7 +15,7 @@
   "quietStartup": true,
   "doubleEscapeAction": "tree",
   "theme": "arete",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "high",
   "collapseChangelog": true,
   "followUpMode": "one-at-a-time",
   "themes": [
@@ -30,6 +30,7 @@
     "freerouter/auto",
     "opencode/big-pickle",
     "opencode/nemotron-3-ultra-free",
+    "commandcode/deepseek/deepseek-v4-pro",
     "commandcode/deepseek/deepseek-v4-flash",
     "commandcode/moonshotai/Kimi-K2.7-Code",
     "commandcode/zai-org/GLM-5.2"
