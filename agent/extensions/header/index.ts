@@ -1,18 +1,13 @@
 // header extension — banner header with ascii art on the left and an
 // info panel on the right showing version, model, and working directory.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const RESET = "\x1b[0m";
-const BLACK = "\x1b[38;2;0;0;0m";
 const ORANGE = "\x1b[38;2;255;165;0m";
 const ARETE = "\x1b[38;2;255;165;0m";
-const YELLOW = "\x1b[38;2;234;179;8m";
 const GREY = "\x1b[38;2;180;180;180m";
-
-// U+2800 BRAILLE PATTERN BLANK — used as empty space in the art
-const BRAILLE_BLANK = "\u2800";
 
 function paint(color: string, text: string): string {
   return `${color}${text}${RESET}`;
@@ -38,7 +33,7 @@ function colorizeBanner(lines: string[]): string[] {
 }
 
 export function buildBannerArtLines(): string[] {
-  return ["▝██████████▘", "   ██    ██", "   ██    ██", "  ▄██    ██▄"];
+  return ["", " ▝██████████▘", "   ██    ██", "   ██    ██", "  ▄██    ██▄"];
 }
 
 function composeSideBySide(
@@ -90,58 +85,6 @@ function buildInfoPanel(height: number): string[] {
   lines.push(paint(GREY, cwd));
 
   return lines;
-}
-
-// ── Skills widget (above the input area) ─────────────────────────────
-
-import { existsSync, readdirSync } from "node:fs";
-import * as path from "path";
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
-
-function countSkillDirs(): number {
-  let count = 0;
-  const userSkillsDir = path.join(getAgentDir(), "skills");
-  try {
-    if (existsSync(userSkillsDir)) {
-      const entries = readdirSync(userSkillsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const skillFile = path.join(userSkillsDir, entry.name, "SKILL.md");
-          if (existsSync(skillFile)) count++;
-        }
-      }
-    }
-  } catch {}
-  const projSkillsDir = path.join(
-    process.env.USERPROFILE || process.env.HOME || "",
-    ".agents",
-    "skills",
-  );
-  try {
-    if (existsSync(projSkillsDir)) {
-      const entries = readdirSync(projSkillsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const skillFile = path.join(projSkillsDir, entry.name, "SKILL.md");
-          if (existsSync(skillFile)) count++;
-        }
-      }
-    }
-  } catch {}
-  return count;
-}
-
-function createInfoWidget(_tui: any) {
-  return {
-    dispose() {},
-    invalidate() {},
-    render(width: number): string[] {
-      const text = `${YELLOW}\u25cf ${countSkillDirs()} info${RESET}`;
-      const visLen = visibleWidth(text);
-      const pad = " ".repeat(Math.max(1, width - visLen));
-      return [pad + text];
-    },
-  };
 }
 
 // ── Extension entry ──────────────────────────────────────────────────

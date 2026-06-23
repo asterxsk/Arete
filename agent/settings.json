@@ -1,23 +1,21 @@
 {
-  "defaultModel": "nemotron-3-ultra-free",
-  "defaultProvider": "opencode",
+  "defaultModel": "xiaomi/mimo-v2.5",
+  "defaultProvider": "commandcode",
   "retry": {
     "provider": {
       "timeoutMs": 600000
     }
   },
-  "lastChangelogVersion": "0.79.10",
+  "lastChangelogVersion": "0.80.1",
   "packages": [
     "npm:pi-web-access",
-    "git:github.com/DietrichGebert/ponytail",
-    "npm:@juicesharp/rpiv-todo",
     "npm:pi-hermes-memory"
   ],
-  "hideThinkingBlock": false,
+  "hideThinkingBlock": true,
   "quietStartup": true,
   "doubleEscapeAction": "tree",
   "theme": "arete",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "collapseChangelog": true,
   "followUpMode": "one-at-a-time",
   "themes": [
@@ -31,12 +29,18 @@
   "enabledModels": [
     "freerouter/auto",
     "opencode/big-pickle",
-    "opencode/nemotron-3-ultra-free",
+    "commandcode/zai-org/GLM-5.2",
+    "commandcode/xiaomi/mimo-v2.5",
+    "commandcode/xiaomi/mimo-v2.5-pro",
     "commandcode/deepseek/deepseek-v4-pro",
-    "commandcode/deepseek/deepseek-v4-flash",
-    "commandcode/zai-org/GLM-5.2"
+    "commandcode/deepseek/deepseek-v4-flash"
   ],
   "terminal": {
     "showTerminalProgress": true
-  }
+  },
+  "compaction": {
+    "enabled": true
+  },
+  "enableSkillCommands": true,
+  "defaultProjectTrust": "always"
 }

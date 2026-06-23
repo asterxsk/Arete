@@ -1,26 +1,35 @@
 # md-link
 
-Markdown collab editor: link a `.md` file to the session for collaborative
-editing. Agent responses are appended to the file (viewable rendered in
-Obsidian). User edits the file directly, then sends changes back via
-`/send-diff`.
+Markdown collaborative editor: link a `.md` file to the session for
+collaborative editing. Agent responses are appended to the file (viewable
+rendered in Obsidian). User edits the file directly, then sends changes back
+via `/send-diff`.
+
+## Features
+
+- **Session persistence** — linked file is restored on session restart via a
+  custom session entry.
+- **Auto-create** — `/link-md` creates the file and parent directories if they
+  don't exist.
+- **Status bar** — shows the linked filename in the status bar.
+- **Smart diffing** — detects simple appends (sent as raw text) vs. inline
+  edits (sent as `Removed: … Replaced with: …` with line context).
 
 ## Commands
 
 - `/link-md <filepath>` — link a markdown file to this session
 - `/unlink-md` — unlink the current file
-- `/send-diff` (or `/sd`) — send your edits as a message to the agent
+- `/send-diff` — send your edits as a message to the agent
+- `/sd` — alias for `/send-diff`
 
 ## How it works
 
-- On session start, the extension restores the last linked file from a
-  custom session entry.
-- After each assistant message that doesn't include tool calls, the response
-  text is appended to the linked file with a horizontal-rule separator.
-- On `/send-diff`, the extension reads the file, computes a diff against the
-  last known content, and sends either the appended text (simple case) or a
-  "Removed: … Replaced with: …" message (inline edits).
+1. Link a file with `/link-md`.
+2. Agent responses (excluding intermediate tool-call messages) are appended to
+   the linked file, separated by horizontal-rule dividers.
+3. Edit the file directly in your editor (e.g. Obsidian).
+4. Run `/send-diff` to send your changes back to the agent.
 
 ## Removal
 
-Delete the `md-link/` folder. The three commands disappear.
+Delete the `md-link/` folder. All four commands disappear.

@@ -1,33 +1,29 @@
 # header
 
-The pi header: an orange ascii-art banner on the left, an
-info panel on the right showing version, provider, model, and working
-directory, and a `● N skills` widget above the input area.
+Renders a side-by-side banner header for the pi TUI: an orange ASCII-art logo on the left and an info panel on the right showing version, provider, model, and working directory.
 
 ## What it renders
 
 ```
-                                                                              ● 77 skills
 ▝██████████▘                          Arete v2.6.1
   ██    ██                                provider
   ██    ██                                model
  ▄██    ██▄                               /path/to/working/dir
 ```
 
-The banner uses a **solid orange** (#ffa500) color for all non-space
-characters. Whitespace cells stay uncolored so the silhouette reads
-against the terminal background.
+- **Banner** — solid orange (#ffa500) ASCII art for the pi logo.
+- **Info panel** (grey text) — version string, current provider, model name, and `process.cwd()`.
+- The header updates automatically when the active model changes (`model_select` event).
 
-The info panel on the right shows:
-- **Version** (orange)
-- **Provider** (grey)
-- **Model** (grey)
-- **Working directory** (grey)
+## How it works
 
-The skills widget above the input area reads both `~/.pi/agent/skills`
-and `~/.agents/skills`, counting each subfolder that has a `SKILL.md`.
+| Event | Behaviour |
+|---|---|
+| `session_start` | Reads model info from context, registers the header widget via `ctx.ui.setHeader()`. |
+| `model_select` | Refreshes provider/model display and re-renders the header. |
+
+No commands or tools are registered.
 
 ## Removal
 
-Delete the `header/` folder. The header falls back to pi's default
-blank header. The skills count widget disappears.
+Delete the `header/` folder. pi falls back to its default blank header.

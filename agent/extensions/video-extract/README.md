@@ -10,7 +10,7 @@ an entire video.
 - **YouTube videos**: Extracts frames via yt-dlp + ffmpeg, and/or
   analyzes the full video content via the Gemini API
 - **Local video files**: Supports `.mp4`, `.mov`, `.webm`, `.avi`,
-  `.mpeg`, `.wmv`, `.flv`, `.3gp` — up to 50MB
+  `.mpeg`, `.mpg`, `.wmv`, `.flv`, `.3gp`, `.3gpp` — up to 50MB
 - **Frame extraction**: At a specific timestamp, a range (evenly-spaced
   frames), or across the full video
 - **Gemini analysis**: Pass a specific `prompt` for deep content

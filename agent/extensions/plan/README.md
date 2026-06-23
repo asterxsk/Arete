@@ -1,46 +1,33 @@
 # Plan Mode Extension
 
-A simple `/plan` slash command that toggles the agent between read-only mode and full YOLO mode.
+A toggle for read-only exploration mode. Run `/plan` to disable edit/write tools and block destructive shell commands.
 
-## Commands
+## Usage
 
 | Command | Description |
 |---------|-------------|
 | `/plan` | Toggle plan mode on/off |
 
-## How It Works
+## What Plan Mode Does
 
-### Plan Mode Enabled (`/plan`)
-- **Tools disabled**: `edit`, `write` (all other tools remain available)
-- **Bash restricted**: Destructive commands are blocked:
-  - File operations: `rm`, `mv`, `cp`, `mkdir`, `touch`, `chmod`, `chown`
-  - System: `sudo`, `su`, `kill`, `reboot`, `shutdown`
-  - Package managers: `npm install`, `yarn add`, `pip install`, `apt install`, `brew install`
-  - Git writes: `git add`, `git commit`, `git push`, `git merge`, `git rebase`, `git reset`
-  - File redirects: `>`, `>>`
-  - Editors: `vim`, `nano`, `code`, `subl`
-  - Dangerous: `dd`, `shred`, `tee`, `truncate`
-  - Services: `systemctl start|stop|restart`, `service start|stop|restart`
-- **Footer indicator**: Shows `⏸ plan` in the status bar
+**When enabled:**
+- Disables `edit` and `write` tools
+- Blocks destructive commands in both Bash and PowerShell:
+  - File operations (`rm`, `mv`, `cp`, `mkdir`, `Remove-Item`, `Move-Item`, etc.)
+  - System (`sudo`, `kill`, `reboot`, `shutdown`)
+  - Package managers (`npm install`, `pip install`, `apt install`, etc.)
+  - Git writes (`git add`, `git commit`, `git push`, `git merge`, etc.)
+  - File redirects (`>`, `>>`)
+  - Editors (`vim`, `nano`, `code`)
+  - Destructive tools (`dd`, `shred`, `truncate`)
+  - Services (`systemctl`, `service`)
+- Shows `⏸ plan` indicator in the footer
 
-### Plan Mode Disabled (`/plan` again)
-- All tools restored
-- Bash unrestricted
-- Footer indicator removed
-
-## Implementation Details
-
-- Uses `pi.registerCommand("plan", ...)` for the toggle handler
-- Uses `pi.setActiveTools()` / `pi.getActiveTools()` to filter edit/write tools
-- Uses `pi.on("tool_call")` to intercept and block destructive bash commands
-- Uses `ctx.ui.setStatus("plan", ...)` for the footer indicator
-- Simple boolean state `let planMode = false`
+**When disabled:** Full access restored, indicator removed.
 
 ## Removal
 
-To remove the extension, delete the directory:
+Delete the directory and restart the agent:
 ```bash
 rm -rf ~/.pi/agent/extensions/plan
 ```
-
-Then restart the agent.

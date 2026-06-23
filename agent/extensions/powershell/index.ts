@@ -1,6 +1,60 @@
-import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
+
+// ── Compact UI helpers (matches compactui style) ─────────────────────
+const INDENT = " ";
+const HINT = " (ctrl+o to expand)";
+
+function compactLine(text: string): Component {
+	return {
+		render(width) {
+			return [visibleWidth(text) <= width ? text : truncateToWidth(text, width, "...")];
+		},
+		invalidate() {},
+	};
+}
+
+function orange(theme: any, text: string): string {
+	return `\x1b[38;2;250;179;135m${text}\x1b[39m`;
+}
+
+function compactCall(toolName: string, argsStr: string, theme: any): Component {
+	let display = argsStr.split("\n")[0] ?? argsStr;
+	if (display.length > 50) display = display.slice(0, 47) + "...";
+	else if (display.length < argsStr.length) display += "...";
+	return compactLine(INDENT + orange(theme, toolName) + " [" + display + "]" + theme.fg("dim", HINT));
+}
+
+function formatDur(s: number): string {
+	if (s < 0.01) return "0.0s";
+	if (s < 60) return s.toFixed(1) + "s";
+	return Math.floor(s / 60) + "m " + Math.floor(s % 60) + "s";
+}
+
+function expandedBox(theme: any, headerName: string, argsLine: string, lines: string[], durationS: number, limit: number): Component {
+	const show = lines.slice(0, limit);
+	const hasMore = lines.length > limit;
+	const raw: string[] = [];
+	raw.push(INDENT + orange(theme, headerName) + "[" + argsLine + "]");
+	const CONTENT_INDENT = "    │ ";
+	for (const l of show) {
+		raw.push(INDENT + CONTENT_INDENT + theme.fg("text", l));
+	}
+	if (hasMore) {
+		const hidden = lines.length - limit;
+		raw.push(INDENT + CONTENT_INDENT + theme.fg("dim", `... (${hidden} more lines, ${lines.length} total, `) + theme.fg("muted", "ctrl+o") + theme.fg("dim", " to expand)") );
+	}
+	if (durationS >= 0) {
+		const FOOTER_INDENT = "    └ ";
+		raw.push(INDENT + FOOTER_INDENT + theme.fg("dim", "Duration: " + formatDur(durationS)));
+	}
+	return {
+		render(width: number) { return raw.map((l) => visibleWidth(l) <= width ? l : truncateToWidth(l, width, "...")); },
+		invalidate() {},
+	};
+}
 
 
 export default function (pi: ExtensionAPI) {
@@ -42,16 +96,18 @@ export default function (pi: ExtensionAPI) {
 				child.on("close", (code) => {
 					const elapsed = (Date.now() - start) / 1000;
 					const text = stdout.trim() || stderr.trim();
+					const output = text || "(no output)";
+					const baseDetails = { exitCode: code, stderr, stdout, _durationS: elapsed, command };
 					if (code !== 0 && stderr.trim()) {
 						return resolve({
-							content: [{ type: "text", text: text || "Exit code: " + code }],
-							details: { exitCode: code, stderr, stdout, _durationS: elapsed, command },
+							content: [{ type: "text", text: output }],
+							details: { ...baseDetails, _fullOutput: output },
 							isError: true,
 						});
 					}
 					return resolve({
-						content: [{ type: "text", text: text || "(no output)" }],
-						details: { exitCode: code, stderr, stdout, _durationS: elapsed, command },
+						content: [{ type: "text", text: output }],
+						details: { ...baseDetails, _fullOutput: output },
 					});
 				});
 
@@ -71,5 +127,20 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 
+		renderCall(args, theme, context) {
+			if (context.expanded) return compactLine("");
+			return compactCall("pwsh", args.command ?? "?", theme);
+		},
+
+		renderResult(result, { expanded, isPartial }, theme, _context) {
+			if (isPartial) return compactLine(INDENT + theme.fg("warning", "Running..."));
+
+			const details = result.details as Record<string, unknown> | undefined;
+			const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
+			if (!expanded) return compactLine("");
+			const lines = full.split("\n");
+			const durationS = (details?._durationS as number) ?? -1;
+			return expandedBox(theme, "pwsh", _context.args.command || "", lines, durationS, 50);
+		},
 	});
 }

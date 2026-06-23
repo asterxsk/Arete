@@ -4,33 +4,36 @@ Tracks files changed (modified/created) by **pi** via the built-in `edit` and `w
 
 ## Features
 
-- Persistent log (stored in session as custom entries)
-- Exposes file change counts via `globalThis.__pi_filechanges_counts` (rendered by the `statusline` extension)
-- Exposes file change lines via `globalThis.__pi_filechanges_lines` (rendered by the `todos` widget)
-- `/filechanges` to toggle the filechanges widget visibility (`hide` / `show`)
-- `/filechanges-accept` to clear the log (keep files)
-- `/filechanges-decline` to revert logged changes (restore original contents / delete created files)
+- **Diff tracking**: Records original file content before first pi change, computes unified diffs
+- **Persistent state**: Session entries (`filechanges:baseline`, `filechanges:clear`, `filechanges:untrack`) survive session navigation
+- **Widget**: Shows up to 8 most-recently-modified files with `+n/-n` line counts; "…and N more" for overflow
+- **Status bar**: Displays `Δ edited + created` counts (rendered by the `statusline` extension)
+- **Session-aware**: Rebuilds state on `session_start`, `session_switch`, `session_tree`, `session_fork`
 
-## Usage
+## Commands
 
-1. Reload pi: `/reload`
-2. Make changes through pi (using `edit`/`write`)
-3. Run:
-   - `/filechanges` to toggle the widget
-   - `/filechanges hide` to hide the widget
-   - `/filechanges show` to show the widget
-   - `/filechanges-accept` to accept
-   - `/filechanges-decline` to decline
+| Command | Description |
+|---------|-------------|
+| `/filechanges` | Toggle widget visibility |
+| `/filechanges show` | Show the widget |
+| `/filechanges hide` | Hide the widget |
+| `/filechanges-accept` | Accept changes (keep files, clear log) |
+| `/filechanges-decline` | Decline changes (revert files, clear log) |
 
-### Non-interactive usage
+## Non-interactive usage
 
-If `ctx.hasUI` is false (print/json mode), accept/decline require explicit confirmation:
+If `ctx.hasUI` is false (print/json mode), accept/decline require the `force` flag:
 
 - `/filechanges-accept force`
 - `/filechanges-decline force`
 
+## How to remove
+
+Delete the `filechanges` folder from `~/.pi/agent/extensions/` and restart pi.
+
 ## Notes
 
 - Only tracks changes performed through `edit` and `write` tools.
-- To support "decline", the extension stores the original file contents (before the first pi change) in the session file as a custom entry.
-- The diff itself is not rendered as an overlay; the widget shows file paths and `+x/-y` counts.
+- Original file content is stored in session entries to enable decline (revert).
+- Files that return to their original content are automatically untracked.
+- The diff is not rendered as an overlay; the widget shows file paths and `+x/-y` line counts.

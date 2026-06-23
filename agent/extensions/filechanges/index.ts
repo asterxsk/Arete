@@ -309,7 +309,7 @@ async function ensureParentDir(absPath: string): Promise<void> {
 	}
 
 	async function acceptAll(ctx: ExtensionCommandContext, force: boolean) {
-		await ctx.waitForIdle();
+		// Accept is safe during a turn — it only clears the log, no file modifications.
 
 		if (tracked.size === 0) {
 			if (ctx.hasUI) ctx.ui.notify("filechanges: nothing to accept.", "info");
@@ -507,25 +507,3 @@ async function ensureParentDir(absPath: string): Promise<void> {
 	});
 }
 
-// ponytail: minimal self-check for the pure helpers
-function demo(): void {
-	const diff = `--- a/file.txt
-+++ b/file.txt
-@@ -1,3 +1,3 @@
- line1
--line2
-+line2!
- line3
-+newline
-`;
-	const counts = countDiffLines(diff);
-	console.assert(counts.added === 2, `added=${counts.added}`);
-	console.assert(counts.removed === 1, `removed=${counts.removed}`);
-
-	const path = normalizeToolPath("/home/user/project", "src/file.ts");
-	console.assert(!path.relPath.startsWith("..") && path.relPath.includes("src"), path.relPath);
-
-	console.assert(formatAddedRemovedPlain(2, 1) === "(+2/-1)");
-	console.assert(formatStatus(new Map(), undefined) === undefined);
-}
-// demo(); // uncomment to run

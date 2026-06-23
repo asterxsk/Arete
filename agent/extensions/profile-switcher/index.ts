@@ -1,7 +1,7 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { LoginDialogComponent } from "@mariozechner/pi-coding-agent";
-import type { OAuthLoginCallbacks, OAuthProviderId } from "@mariozechner/pi-ai";
-import { Input, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { LoginDialogComponent } from "@earendil-works/pi-coding-agent";
+import type { OAuthLoginCallbacks, OAuthProviderId } from "@earendil-works/pi-ai";
+import { Input, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";

@@ -8,57 +8,52 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any
 
 ```
 extensions/
-├── agents/                 <- /agents command + agent/team/chain discovery
-├── betterui/               <- Compact tree-style tool renderers for bash,
-│                              read, write, edit, grep, find, ls, and
-│                              custom user-message appearance
+├── compactui/              <- Compact tool rendering: orange tool names,
+│                              args truncation, pipe-framed expanded
+│                              output, diff colors, duration tracking
 ├── commandcode-provider/   <- Command Code provider: Claude, GPT, Gemini,
-│                              DeepSeek models, with auth flow
+│                              DeepSeek, and other models with OAuth
+│                              login and per-model pricing
 ├── context/                <- /context overlay: token grid breakdown
-│   └── copilot-usage.ts    <- fetches + caches the Copilot usage meter;
-│                              exposes it via globalThis.__pi_copilot_usage
+│                              with per-category color-coded visualization
 ├── filechanges/            <- /filechanges overlay + accept/decline;
 │                              tracks file modifications per session
 │                              and exposes counts for the statusline
 ├── goal/                   <- /goal command — autonomous task orchestrator
 │                              with pause/resume, turn tracking, history
-├── google-image-search/    <- google_image_search tool
-├── header/                 <- banner header: blackhole ASCII art on the
-│                              left, provider/model/version info panel on
-│                              the right, and ● N skills widget above input
+├── header/                 <- Banner header: ASCII art on the left,
+│                              provider/model/version info panel on
+│                              the right
 ├── md-link/                <- /link-md, /unlink-md, /send-diff — link a
 │                              .md file for collaborative editing
-├── powershell/             <- powershell tool (LLM-callable)
-├── profile-switcher/       <- multi-account auth switching
+├── powershell/             <- powershell tool (LLM-callable) with
+│                              compactui-style rendering
+├── profile-switcher/       <- /profile command — multi-account auth
+│                              switching with OAuth and API key profiles
+├── prompt/                 <- Custom system instructions: shell preference,
+│                              task tracking, caveman mode, no emojis
 ├── questions/              <- questions tool (multi-choice TUI with
 │                              custom-answer fallback and ASCII sketches)
 ├── spinner-phrases/        <- Animated star spinner with orange glow
-│                              effect and fun Claude Code–style phrases
-├── statusline/             <- Footer status line (left→right):
-│                               provider    model
-│                               [████░░░░] 12.5k/128k
-│                              (orange/Gold/Red at 50/75%)
-│                               compact! cue above 90% (Alt+C)
-│                               Δ5  +13 (dynamic non-zero)
-│                              Auto-refreshes on session events
-├── subagents/              <- the `subagent` tool: spawn isolated pi
-│                              processes
-├── tasks/                  <- /tasks command — background terminal task
-│                              runner with output capture, wait, cancel;
-│                              persists across sessions
-├── timers/                 <- /timer command — one-shot and repeating
+│                              effect and fun Claude Code-style phrases
+├── statusline/             <- Footer status line (left to right):
+│                              provider, model, context bar,
+│                              file changes counts; auto-refreshes
+├── subagents/              <- the `subagent` tool + /sub command: spawn
+│                              isolated pi processes with predefined
+│                              agent .md files; duration hidden while running
+├── tasks/                  <- /manage_task command — background terminal
+│                              task runner with output capture, wait,
+│                              cancel; persists across sessions
+├── timers/                 <- /schedule command — one-shot and repeating
 │                              timers with notifications, auto-delete
 │                              on fire, and overlay browser
-├── todos/                  <- /todo command — structured todo list with
-│                              categories, reminders, browse overlay,
-│                              and compact nerd-font widget
-├── video-extract/          <- video_extract tool
-├── youtube-search/         <- youtube_search tool
-│
-└── tmp/                   <- REFERENCE ONLY (`.reference.ts` suffix
-                              prevents pi from loading)
-    ├── subagent.reference.ts        <- old subagent dashboard (rough)
-    └── todo-widget.reference.ts     <- old todo widget (rough)
+├── todo/                   <- todo tool + /todos command — structured
+│                              task list with status tracking, categories,
+│                              reminders, and persistent overlay widget
+└── video-extract/          <- video_extract tool: YouTube + local video
+                               content extraction via Gemini API, ffmpeg,
+                               and yt-dlp
 ```
 
 ## Modular design
@@ -70,14 +65,16 @@ sibling. Cross-extension integration is through:
    consume:
    - `globalThis.__pi_copilot_usage` — set by `context/copilot-usage.ts`,
      read by any extension that wants the current Copilot quota
-   - `globalThis.__pi_goal_state` / `__pi_todo_state` / `__pi_timer_state` /
+   - `globalThis.__pi_goal_state` / `__pi_timer_state` /
      `__pi_task_state` / `__pi_subagents` — each toolkit extension persists
      state across session compacts independently
+   - `globalThis.__pi_filechanges_counts` — file modification counts
+     exposed by `filechanges/` for `statusline/` to display
    - Bridge keys are prefixed with `__pi_` and unique per extension
 
 2. **System prompt injection** via `globalThis.__pi_extension_features`.
    Every extension registers its name, description, commands, tools, and
-   shortcuts at load time. The `agents/` extension collects these and
+   shortcuts at load time. The core pi runtime collects these and
    injects them as a `## Loaded Extensions` section into the system prompt
    at the start of every agent turn, so the LLM always knows what's
    available.
@@ -88,15 +85,14 @@ sibling. Cross-extension integration is through:
    independently.
 
 4. **Graceful degradation**: When an extension's peer is missing, it
-   degrades gracefully (e.g. `/agents chain` says "subagent extension is
-   not loaded" if you delete `subagents/`). Widgets and commands from
+   degrades gracefully (e.g. `subagents/` says "subagent extension is
+   not loaded" if its dependencies are missing). Widgets and commands from
    other extensions continue working.
 
-5. **Shared UI components via direct import**: Extensions that need
-   consistent tool-result rendering import `CompactToolBox` and
-   `emptyComponent` from `betterui/index.js`. Currently `powershell/`
-   uses this — removing `betterui/` will break tool rendering in any
-   extension that depends on it.
+5. **Self-contained rendering**: Extensions that need tool-result rendering
+   include their own `CompactToolBox` / `CompactResult` component rather
+   than importing from a shared extension. This avoids tight coupling
+   between extensions.
 
 ### Feature Registration Pattern
 
@@ -116,15 +112,9 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-The `agents/` extension reads `globalThis.__pi_extension_features` and
+The core pi runtime reads `globalThis.__pi_extension_features` and
 injects it as a `## Loaded Extensions` section at the bottom of the system
 prompt before every agent turn.
-
-## Reference files in `tmp/`
-
-`extensions/tmp/*.reference.ts` are **disabled** (the `.reference.ts` suffix
-prevents pi from loading them). They exist as design references. Do not
-import from them in production extensions.
 
 ## Adding a new extension
 
@@ -149,5 +139,5 @@ If you need npm deps, add `"pi": { "extensions": ["./index.ts"] }` to
 
 Delete the folder. The tool/command/shortcut/widget it registered
 disappears. Other extensions degrade gracefully when a peer is missing
-(e.g. the `/agents` command says "subagent extension is not loaded" if
-you delete `subagents/`).
+(e.g. `subagents/` says "subagent extension is not loaded" if its
+dependencies are missing).

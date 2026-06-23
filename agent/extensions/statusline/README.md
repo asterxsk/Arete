@@ -1,20 +1,28 @@
 # Status Line Extension
 
-A two-line footer status bar showing provider, model, and a color-coded context usage meter.
+A two-line footer status bar showing provider, model, context usage, and file changes.
 
 ```
- nf [████░░░░] 12.3k/200k
-└ claude-3.5-sonnet
+anthropic [████░░░░] 12.3k/200k
+└ claude-3.5-sonnet                   3  1
 ```
 
-## What it does
+## Features
 
-- **Provider + model**: Displays the active provider icon and shortened model name (e.g. `cl-3.5-sonnet`)
+- **Provider**: Active provider name with icon (orange)
+- **Model**: Shortened model name (e.g. `deepseek-reasoner` → `ds-reasoner`)
 - **Context usage bar**: 8-segment gradient bar with smooth color interpolation:
-  - Green → Orange → Gold → Red as usage climbs
+  - Green → Orange → Gold → Red as usage increases
   - Token count shown as `used/window` (e.g. `12.3k/200k`)
-  - Triggers a red "compact!" cue above 90%
+  - Triggers a red "compact!" warning above 90%
+- **File changes**: Shows edited and created file counts when present
 - **Alt+C shortcut**: Runs `/compact` when context is above 90%
+
+## Commands/Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Alt+C`  | Compact context (when usage > 90%) |
 
 ## How it works
 

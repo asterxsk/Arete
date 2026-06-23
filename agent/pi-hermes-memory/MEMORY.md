@@ -1,1 +1,13 @@
 pi-hermes-memory extension (v0.7.18) is installed as a pi package. Location: ~/.pi/agent/npm/node_modules/pi-hermes-memory/. Data directory: ~/.pi/agent/pi-hermes-memory/ with sessions.db (SQLite, ~150KB), skills directory, and migration sentinel. Uses SQLite FTS5 for session search, background learning loop, correction detection, auto-consolidation, and session-end flush. Pi extension auto-discovery paths: ~/.pi/agent/extensions/ (global) and .pi/extensions/ (project-local). Pi packages install to ~/.pi/agent/npm/node_modules/. <!-- created=2026-06-22, last=2026-06-22 -->
+§
+Workflow to convert a pi npm extension to a local extension: (1) Copy the package from C:\Users\prithish\.pi\agent\npm\node_modules\@scope\pkg to C:\Users\prithish\.pi\agent\extensions\<name>. (2) Uninstall the npm version with `pi uninstall npm:@scope/pkg`. This lets the user edit the extension code directly. <!-- created=2026-06-23, last=2026-06-23 -->
+§
+The user has a plan extension at ~/.pi/agent/extensions/plan/index.ts — it blocks destructive commands in plan mode. I extended it to also block PowerShell destructive cmdlets (Copy-Item, Remove-Item, Move-Item, New-Item, Set-Content, etc.) via POWERSHELL_DESTRUCTIVE_PATTERNS array, since the original only blocked bash commands. <!-- created=2026-06-23, last=2026-06-23 -->
+§
+Pi extension `@juicesharp/rpiv-todo` depends on `@juicesharp/rpiv-config` for config utilities (configPath, loadJsonConfig, validateGuidanceFields, GuidanceFields type). When cloning to local extensions, this dependency must either be installed via npm or the 4 small utilities inlined. The config utilities only use node:fs, node:os, node:path — simple to inline for a standalone extension. <!-- created=2026-06-23, last=2026-06-23 -->
+§
+Custom tools registered via registerTool() can have renderCall and renderResult functions to control TUI display. renderCall can show a styled header (e.g., "pwsh command..."), renderResult can dim output lines and add a timing footer (e.g., "Took 0.2s"). This mirrors how built-in tools like bash display. <!-- created=2026-06-23, last=2026-06-23 -->
+§
+The tool_result event in pi extensions can intercept and modify tool output content before it reaches the LLM. This is useful for truncation, reformatting, or filtering output from specific tools. Check event.toolName to target specific tools. <!-- created=2026-06-23, last=2026-06-23 -->
+§
+The subagents extension's model picker only shows models from settings.json and models.json files by default. To show all available models including built-in providers, you need to query the model registry from extension context. <!-- created=2026-06-23, last=2026-06-23 -->

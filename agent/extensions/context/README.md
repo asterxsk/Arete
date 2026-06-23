@@ -1,34 +1,49 @@
 # context
 
 `/context` command — overlay showing context-window usage as a colored
-ANSI-256 grid: system prompt, user messages, assistant text, thinking,
-per-tool tokens (read, bash, edit, write, grep, find, ls, subagent,
-web_search, web_fetch, ask_user, video, img_search, yt_search, custom),
-compaction, custom messages, images, free space.
+ANSI-256 grid with per-category breakdowns and session statistics.
 
-## What it does
+## Purpose
 
-- Renders a centered overlay with a grid of 2-char colored cells, one
-  cell per ~1/N tokens
-- Shows a legend (category + token count + percentage) below the grid
-- Shows session stats: turns, messages, cache read, cache write, cost
-- Warns at 80% / 95% / biggest-tool-consumer-20%+
-- Shows a **Copilot usage line** at the top of the stats section (read
-  from the `globalThis.__pi_copilot_usage` bridge; falls back to
-  "loading…" / "not logged in" / "bridge not installed" placeholders)
+Visualize how much of the context window is consumed by different parts
+of the conversation: system prompt sections, user messages, assistant
+text, thinking, tool results (per-tool), compaction summaries, custom
+messages, images, and free space. Helps diagnose context pressure and
+optimize tool usage.
 
-## Copilot usage support file
+## Features
 
-`context/copilot-usage.ts` is loaded as a sibling file inside the
-`context/` extension folder. On `session_start` it:
+- **Colored grid overlay**: 2-char wide cells, one per ~1/N tokens,
+  rendered as a centered ANSI-256 grid
+- **Per-category legend**: token count + percentage for each category
+- **System prompt breakdown**: Base, Tools, Skills, Guidelines, Docs
+- **Per-tool breakdown**: read, bash, edit, write, grep, find, ls,
+  subagent, web_search, web_fetch, ask_user_question, video_extract,
+  google_image_search, youtube_search (sorted by token count)
+- **Session stats**: turns, messages, cache read, cache write, cost
+- **Copilot usage line**: shows quota bar, percentage, and used/total
+- **Warnings**: at 80% context usage, 95% context usage, and when a
+  single tool consumes >20% of context
+- **Dismissable**: press Escape, q, or Return to close
 
-- Fetches the GitHub Copilot quota via the OAuth + quota API
-- Exposes the latest `CopilotUsageSummary` (or `"loading"` /
-  `"not-logged-in"`) via `globalThis.__pi_copilot_usage`
-- Refreshes every 10 minutes
+## Commands
 
-Other extensions (statusline, the future `/agent` dashboard) read the
-bridge to render the copilot meter without re-fetching.
+| Command     | Description                                      |
+|-------------|--------------------------------------------------|
+| `/context`  | Show context window usage overlay                |
+
+## Copilot usage bridge
+
+`context/copilot-usage.ts` runs on `session_start` and:
+
+1. Fetches GitHub Copilot quota via the OAuth + quota API
+2. Exposes the latest `CopilotUsageSummary` (or `"loading"` /
+   `"not-logged-in"`) via `globalThis.__pi_copilot_usage`
+3. Refreshes every 10 minutes
+4. Cleans up on `session_shutdown`
+
+Other extensions (statusline, etc.) read the bridge to render the
+copilot meter without re-fetching.
 
 ## Removal
 

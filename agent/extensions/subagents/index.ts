@@ -11,10 +11,10 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { parseFrontmatter, truncateHead, withFileMutationQueue, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, getAgentDir } from "@mariozechner/pi-coding-agent";
-import { Input, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
-import type { Component } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter, truncateHead, withFileMutationQueue, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Input, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
 
 // ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
 interface _CBOpts {
@@ -26,6 +26,7 @@ interface _CBOpts {
 	expanded?: boolean;
 	footerAlways?: boolean;
 	suffix?: string;
+	duration?: number;
 }
 
 class CompactToolBox implements Component {
@@ -36,10 +37,11 @@ class CompactToolBox implements Component {
 	invalidate(): void { this.cachedWidth = undefined; this.cachedLines = undefined; }
 	render(width: number): string[] {
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways } = this.opts;
+		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways, duration } = this.opts;
 		const lines: string[] = [];
-		const dot = state === "pending" ? "\x1b[2m●\x1b[0m" : state === "error" ? "\x1b[31m●\x1b[0m" : "\x1b[32m●\x1b[0m";
-		let header = `${dot} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
+		const star = state === "pending" ? "\x1b[32m✻\x1b[0m" : state === "error" ? "\x1b[31m✻\x1b[0m" : "\x1b[37m✻\x1b[0m";
+		const durStr = duration !== undefined ? ` [${formatDuration(duration)}]` : "";
+		let header = ` ${star} \x1b[38;2;255;165;0m${toolName}\x1b[0m${durStr}`;
 		if (suffix) header += ` ${suffix}`;
 		lines.push(truncateToWidth(header, width));
 		if (expanded) {
@@ -158,6 +160,13 @@ const CUSTOM_TOOL_EXTENSIONS: Record<string, string> = {
 	powershell: path.join(EXT_BASE, "powershell", "index.ts"),
 };
 
+// Provider extensions needed for model resolution in subagent processes
+const PROVIDER_EXTENSIONS: string[] = [
+	path.join(EXT_BASE, "commandcode-provider", "index.ts"),
+	path.join(EXT_BASE, "todo", "index.ts"),
+	path.join(EXT_BASE, "powershell", "index.ts"),
+];
+
 // ── Agent Discovery & Registration ────────────────────────────────────
 
 let agents: AgentConfig[] = [];
@@ -239,8 +248,8 @@ function formatTokens(n: number): string {
 
 function formatDuration(ms: number): string {
 	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-	return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
+	if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
+	return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
 // ── Resolve the model to use for a subagent ──────────────────────────
@@ -300,6 +309,16 @@ async function buildPiArgs(
 
 	for (const extPath of extensionPaths) {
 		// Skip non-existent extension files so the subagent process doesn't fail
+		try {
+			fs.realpathSync(extPath);
+			args.push("--extension", extPath);
+		} catch {
+			// Extension file not found, skip gracefully
+		}
+	}
+
+	// Load provider extensions so subagent can use provider-specific models
+	for (const extPath of PROVIDER_EXTENSIONS) {
 		try {
 			fs.realpathSync(extPath);
 			args.push("--extension", extPath);
@@ -386,6 +405,12 @@ async function runSubagent(
 		progress.durationMs = Date.now() - startTime;
 		onUpdate?.(progress);
 	}, 150);
+
+	// Periodic timer update so duration ticks even without tool events
+	const timerInterval = setInterval(() => {
+		progress.durationMs = Date.now() - startTime;
+		onUpdate?.(progress);
+	}, 1000);
 
 	const exitCode = await new Promise<number>((resolve) => {
 		const proc = spawn(command, spawnArgs, {
@@ -503,6 +528,8 @@ async function runSubagent(
 		}
 	});
 
+	clearInterval(timerInterval);
+
 	// Cleanup temp dir
 	try {
 		fs.rmSync(tempDir, { recursive: true, force: true });
@@ -575,10 +602,20 @@ async function mapConcurrent<T, R>(
 
 const AGENT_DIR = getAgentDir();
 
-function loadSuggestions(): string[] {
+function loadSuggestions(modelRegistry?: ModelRegistry): string[] {
 	const models = new Set<string>();
 
-	// 1. enabledModels from settings.json (covers packages)
+	// 1. All available models from model registry (built-in + custom)
+	if (modelRegistry) {
+		try {
+			const available = modelRegistry.getAvailable();
+			for (const m of available) {
+				models.add(`${m.provider}/${m.id}`);
+			}
+		} catch {}
+	}
+
+	// 2. enabledModels from settings.json (covers packages)
 	try {
 		const sp = path.join(AGENT_DIR, "settings.json");
 		if (fs.existsSync(sp)) {
@@ -592,7 +629,7 @@ function loadSuggestions(): string[] {
 		}
 	} catch {}
 
-	// 2. All provider models from models.json (covers provider configs)
+	// 3. All provider models from models.json (covers provider configs)
 	try {
 		const mp = path.join(AGENT_DIR, "models.json");
 		if (fs.existsSync(mp)) {
@@ -635,8 +672,9 @@ class SubagentAutocompleteComponent {
 			bold: (text: string) => string;
 		},
 		initialValue: string,
+		modelRegistry?: ModelRegistry,
 	) {
-		this.allModels = loadSuggestions();
+		this.allModels = loadSuggestions(modelRegistry);
 		this.input = new Input();
 		this.input.setValue(initialValue);
 		this.lastInputValue = initialValue;
@@ -799,7 +837,7 @@ export default function (pi: ExtensionAPI) {
 			// Interactive mode: open autocomplete dialog
 			while (true) {
 				const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-					const component = new SubagentAutocompleteComponent(tui, theme, current);
+					const component = new SubagentAutocompleteComponent(tui, theme, current, ctx.modelRegistry);
 					component.onDone = done;
 					component.focused = true;
 					return component;
@@ -861,6 +899,7 @@ export default function (pi: ExtensionAPI) {
 			const cwd = ctx.cwd;
 			const parentModel = ctx.model ? `${(ctx.model as any).provider}/${ctx.model.id}` : undefined;
 			const resolvedModel = resolveSubagentModel(parentModel);
+			console.log(`[subagent-debug] parentModel=${parentModel} resolvedModel=${resolvedModel} stored=${getSubagentModel()}`);
 
 			// Validate mode
 			if (params.tasks && params.tasks.length > 0) {
@@ -968,13 +1007,10 @@ export default function (pi: ExtensionAPI) {
 
 		// ── Render: result ──
 		renderResult(result, { isPartial, expanded }) {
-			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
 			if (isPartial) {
 			const details = result.details as Details | undefined;
 
 			if (details?.mode === "parallel" && details.results.length > 1) {
-				const names = details.results.map((r) => r.agent).join(", ");
-				const running = details.results.filter((r) => r.progress?.status === "running").length;
 				const done = details.results.filter((r) => r.progress?.status === "completed").length;
 				const argsLine = `${done}/${details.results.length} tasks`;
 				return new CompactToolBox({
@@ -1016,6 +1052,7 @@ export default function (pi: ExtensionAPI) {
 					toolName: "subagent",
 					argsLine,
 					state: isError ? "error" : "done",
+					duration: 0,
 					previewLines,
 					expanded,
 				});
@@ -1046,7 +1083,8 @@ export default function (pi: ExtensionAPI) {
 						return `${icon} ${r.agent} — ${r.progress?.toolCount || 0} tools · ${formatTokens(r.progress?.tokens || 0)} tok${dur ? " · " + dur : ""}`;
 					});
 				}
-				return new CompactToolBox({ toolName: "subagent", argsLine, state, previewLines, footer, expanded, footerAlways: true });
+				const parDuration = Math.max(...results.map((r) => r.progress?.durationMs || 0));
+				return new CompactToolBox({ toolName: "subagent", argsLine, state, previewLines, footer, expanded, footerAlways: true, duration: parDuration });
 			} else {
 				// Single agent
 				const r = results[0];
@@ -1081,6 +1119,7 @@ export default function (pi: ExtensionAPI) {
 					toolName: r.agent,
 					argsLine: taskPreview,
 					state,
+					duration: r.progress?.durationMs || 0,
 					previewLines,
 					footer,
 					expanded,

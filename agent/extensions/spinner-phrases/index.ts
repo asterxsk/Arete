@@ -23,7 +23,7 @@ const RESET = "\x1b[0m";
 
 // ── Star spinner frames ───────────────────────────────────────────
 
-const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆"];
+const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "✻"];
 
 // ── Fun phrases ────────────────────────────────────────────────────
 
@@ -176,7 +176,7 @@ function start(ctx: any): void {
 	ctx.ui.setWorkingIndicator({ frames: [] });
 
 	tick();
-	intervalId = setInterval(tick, 75);
+	intervalId = setInterval(tick, 100);
 }
 
 function stop(): void {

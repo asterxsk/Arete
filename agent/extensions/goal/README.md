@@ -1,10 +1,12 @@
 # goal
 
-Autonomous task orchestrator — inspired by Claude Code's `/goal` and
+Autonomous goal orchestrator — inspired by Claude Code's `/goal` and
 OpenAI Codex CLI's `/goal`.
 
 Set a high-level objective and the agent works toward it automatically
-until accomplished, paused, or cleared.
+until accomplished, paused, or cleared. Each response is checked for
+completion, and if the goal isn't done, a follow-up continuation is
+sent with progress context.
 
 ## Commands
 
@@ -45,18 +47,21 @@ When a goal is active, a status widget shows up in the sidebar:
 
 ## Features
 
-- **Subcommands**: status, clear, pause, resume, history
+- **Subcommands**: status, clear, pause, resume, history, config
 - **Status widget**: Persistent sidebar widget showing goal progress
 - **Turn tracking**: Progress bar showing turns used vs max (default 200)
 - **Elapsed time**: Running timer shown in the widget
 - **Goal history**: Last 50 goals tracked in-memory
 - **Session persistence**: Goal state survives session compacts via
-  `globalThis` bridge
-- **Smart detection**: Checks for `[GOAL_ACCOMPLISHED]` marker AND
-  natural language goal-done signals
-- **Lock mechanism**: Prevents overlapping continuation messages
-- **Adaptive messages**: Continuation prompts get more context-aware
-  as turns increase
+  `globalThis` bridge (does not survive a full process restart)
+- **Smart completion detection**: Checks for the `[GOAL_ACCOMPLISHED]`
+  marker, and also looks for natural-language phrases like "goal
+  accomplished", "task complete", "mission achieved", etc. near the
+  end of the response
+- **Lock mechanism**: Prevents overlapping continuation messages when
+  `agent_end` fires
+- **Adaptive messages**: Continuation prompts gain extra guidance after
+  3+ turns (e.g., "try a different approach")
 
 ## Config
 

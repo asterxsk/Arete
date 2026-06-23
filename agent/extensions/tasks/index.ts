@@ -38,10 +38,10 @@
  */
 
 import { spawn } from "node:child_process";
-import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Input, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import type { Component } from "@mariozechner/pi-tui";
+import { Type } from "typebox";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Input, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
 
 // ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
 interface _CBOpts {

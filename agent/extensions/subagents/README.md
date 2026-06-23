@@ -1,14 +1,23 @@
-# Minimal Subagents
+# Subagents
 
-A pi extension that registers a single `subagent` tool with three agents:
+A pi extension that provides a `subagent` tool for running isolated child pi processes with predefined agents loaded from `.md` files.
 
-| Agent | Tools | Model | Purpose |
-|-------|-------|-------|---------|
-| **scout** | read, grep, find, ls | claude-haiku-4-5 | Fast codebase recon |
-| **researcher** | web_search, web_fetch | claude-sonnet-4-6 | Web research |
-| **worker** | read, write, edit, safe_bash | claude-sonnet-4-6 | Code changes |
+## Features
 
-## Usage
+- **Single and parallel execution** — run one agent or multiple agents concurrently
+- **Dynamic agent loading** — agents defined in `.md` files with YAML frontmatter
+- **`/sub` command** — set the model used by all subagents (with interactive picker)
+- **Real-time progress** — live updates showing tool usage and token counts; duration is hidden while running and shown only on completion
+- **Concurrency control** — configurable limit (default: 4 concurrent subagents)
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/sub <model>` | Set the model for all subagents (e.g., `/sub anthropic/claude-sonnet-4-6`) |
+| `/sub` | Open interactive model picker with autocomplete |
+
+## Tool: `subagent`
 
 **Single mode:**
 ```json
@@ -23,53 +32,50 @@ A pi extension that registers a single `subagent` tool with three agents:
 ]}
 ```
 
-Max 4 concurrent subagents (configurable). Each runs as an isolated `pi` process with no inherited context — all context must be in the task description.
+**Parameters:**
+- `agent` (single mode) — name of the agent to invoke
+- `task` (single mode) — task description
+- `tasks` (parallel mode) — array of `{agent, task, cwd?}` objects
+- `cwd` — optional working directory for the agent process
 
-## Config
+## How Model Selection Works
 
-Optional `config.json` next to `index.ts`:
+The model for subagents is resolved in this priority order:
 
-```json
-{ "maxConcurrency": 4 }
-```
+1. **User-set model** via `/sub <model>` command
+2. **Parent session's model** — inherited from the current conversation
+3. **Fallback** — `"auto"` (provider default)
 
-## UI
+**Important:** Agents cannot specify their own model. The `/sub` command controls which model all subagents use.
 
-Default view shows medium detail (agent status, task preview, recent tools). Expand to see full task, all tool calls, complete output, and token usage.
+## Agent Files
 
-## Registering Agents from Other Extensions
-
-Other extensions can dynamically register and unregister agents at runtime. This is useful for domain-specific agents that should only be available when a particular extension is active.
-
-### 1. Define agent `.md` files
-
-Create markdown files with YAML frontmatter in your extension's directory (e.g. `my-extension/agents/my-agent.md`):
+Agents are defined as `.md` files in the `agents/` directory with YAML frontmatter:
 
 ```markdown
 ---
-name: my-agent
-description: Does a specific thing
-tools: web_search, video_extract
-model: claude-sonnet-4-20250514
+name: scout
+description: Fast codebase recon
+tools: read, grep, find, ls
 ---
 
-You are an agent that does a specific thing...
+You are a codebase exploration agent. Your job is to quickly find
+and report on relevant files and code patterns...
 ```
 
-Frontmatter fields:
-- **name** (required) — unique agent name, used in `{ agent: "my-agent" }` calls
-- **description** — short description
-- **tools** — comma-separated list of tools the agent needs (builtin or extension)
-- **model** — model identifier (defaults to `anthropic/claude-sonnet-4-6`)
+**Frontmatter fields:**
+- **name** (required) — unique agent name, used in `{ agent: "name" }` calls
+- **description** — short description shown in system prompt
+- **tools** — comma-separated list of tools (builtin or extension)
 
 The markdown body becomes the agent's system prompt.
 
-### 2. Register agents via `globalThis.__pi_subagents`
+## Registering Agents from Other Extensions
 
-Pi loads extensions via jiti, which creates separate module instances. Direct imports from the subagents extension will reference a different `agents` array than the one the `subagent` tool uses. Use the `globalThis` bridge instead:
+Other extensions can dynamically register agents at runtime via the global bridge:
 
 ```typescript
-import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -77,7 +83,6 @@ interface AgentConfig {
   name: string;
   description: string;
   tools: string[];
-  model: string;
   systemPrompt: string;
   filePath: string;
 }
@@ -88,7 +93,7 @@ function registerMyAgents(): void {
   const subagents = (globalThis as any).__pi_subagents as
     | { registerAgent: (config: AgentConfig) => void; unregisterAgent: (name: string) => void }
     | undefined;
-  if (!subagents) return; // subagents extension not loaded
+  if (!subagents) return;
 
   for (const entry of fs.readdirSync(AGENTS_DIR)) {
     if (!entry.endsWith(".md")) continue;
@@ -103,7 +108,6 @@ function registerMyAgents(): void {
         name: frontmatter.name,
         description: frontmatter.description || "",
         tools,
-        model: frontmatter.model || "anthropic/claude-sonnet-4-6",
         systemPrompt: body,
         filePath,
       });
@@ -114,31 +118,42 @@ function registerMyAgents(): void {
 }
 ```
 
-Call `registerMyAgents()` when your extension activates (e.g. in a command handler). The agents become available to the `subagent` tool immediately.
+## Custom Tool Support
 
-### 3. Adding custom tool support
+Built-in tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) work automatically. For other tools, they must be mapped in `CUSTOM_TOOL_EXTENSIONS`:
 
-If your agents need tools beyond the built-in set, those tools must be mapped in the `CUSTOM_TOOL_EXTENSIONS` record in `subagents/index.ts`:
+| Tool | Extension Path |
+|------|----------------|
+| `web_search` | `web-search/index.ts` |
+| `web_fetch` | `web-fetch/index.ts` |
+| `safe_bash` | `tools/safe-bash.ts` |
+| `video_extract` | `video-extract/index.ts` |
+| `youtube_search` | `youtube-search/index.ts` |
+| `google_image_search` | `google-image-search/index.ts` |
+| `powershell` | `powershell/index.ts` |
 
-```typescript
-const CUSTOM_TOOL_EXTENSIONS: Record<string, string> = {
-  web_search: path.join(EXT_BASE, "web-search", "index.ts"),
-  web_fetch: path.join(EXT_BASE, "web-fetch", "index.ts"),
-  safe_bash: path.join(TOOLS_DIR, "safe-bash.ts"),
-  video_extract: path.join(EXT_BASE, "video-extract", "index.ts"),
-  youtube_search: path.join(EXT_BASE, "youtube-search", "index.ts"),
-  google_image_search: path.join(EXT_BASE, "google-image-search", "index.ts"),
-};
+## Config
+
+Optional `config.json` next to `index.ts`:
+
+```json
+{ "maxConcurrency": 4 }
 ```
-
-Built-in tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) work automatically. Any other tool the agent lists in its frontmatter must have a corresponding entry here pointing to the extension's `index.ts`.
 
 ## Structure
 
 ```
 subagents/
 ├── index.ts           # Extension entry point
-├── agents/            # Built-in agent configs (frontmatter + system prompt)
+├── agents/            # Agent configs (frontmatter + system prompt)
 └── tools/             # Extensions loaded into subagent processes
     └── safe-bash.ts   # bash with dangerous command blocking
+```
+
+## Removing This Extension
+
+Delete the `subagents/` directory:
+
+```bash
+rm -rf ~/.pi/agent/extensions/subagents/
 ```

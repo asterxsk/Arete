@@ -1,7 +1,7 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Input, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
-import type { Component } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Input, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+import type { Component } from "@earendil-works/pi-tui";
 
 // ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
 interface _CBOpts {

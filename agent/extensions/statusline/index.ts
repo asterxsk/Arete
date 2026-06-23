@@ -196,10 +196,9 @@ export default function (pi: ExtensionAPI) {
 					let fcPart = "";
 					if (counts && (counts.edited > 0 || counts.created > 0)) {
 						let parts: string[] = [];
-						if (counts.edited > 0) parts.push(paint(C.orange, "\u0394" + counts.edited));
+						if (counts.edited > 0) parts.push(paint(C.orange, "\uf040 " + counts.edited));
 						if (counts.created > 0) {
-							parts.push(paint(C.green, counts.created.toString()));
-							parts.push(paint(C.green, "\uf0c5"));
+							parts.push(paint(C.green, "\uf15b\u202f" + counts.created));
 						}
 						fcPart = " " + parts.join(" ");
 					}

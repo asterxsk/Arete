@@ -26,7 +26,7 @@
  *   - Session-aware (state survives session compact via globalThis bridge)
  */
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 // ── Constants ────────────────────────────────────────────────────────────
 

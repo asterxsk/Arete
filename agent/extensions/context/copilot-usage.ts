@@ -9,7 +9,7 @@
 // extensions are loaded via jiti which gives each file a separate module
 // instance.
 
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
 // ── Public types ──────────────────────────────────────────────────────
 

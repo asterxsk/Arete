@@ -2,28 +2,36 @@
 
 Animated star spinner with typewriter phrase transitions and elapsed time.
 
+Replaces the default "Working..." indicator with an orange-colored spinner:
+
 ```
 ✦ Manifesting... (1m 2s)
 ★ Thinking... (5s)
 ✧ Brewing... (30s)
 ```
 
-## What it does
+## Features
 
-- **Star spinner**: Rotates through `✦ ✧ ★ ✧ ✦ ☆` frames
-- **Fun phrases**: Cycles through 100+ Claude Code–inspired gerund phrases like "Manifesting", "Reticulating", "Flibbertigibbeting", "Whatchamacalliting"
-- **Typewriter effect**: Phrases transition with a character-by-character erase/type animation (driven by the same tick as the star spinner)
-- **Elapsed time**: Shows how long the agent has been thinking since the first LLM activity: `(1m 2s)`, `(5s)`, `(2h 15m)`
-- **Seamless integration**: Pushes the rendered text to `ctx.ui.setWorkingMessage` so the TUI re-renders on every tick
+- **Star spinner**: Rotates through `✦ ✧ ★ ✧ ✦ ☆ ✻` frames
+- **100+ fun phrases**: Cycles through gerund phrases like "Manifesting", "Reticulating", "Flibbertigibbeting", "Whatchamacalliting"
+- **Typewriter effect**: Phrases transition with a character-by-character erase/type animation
+- **Elapsed time**: Shows time since first LLM activity in `Xs`, `Xm Ys`, or `Xh Ym` format
+- **Orange color**: Displays in orange (RGB 255,180,60)
 
-## How it works
+## Events
 
-The extension hooks into:
-1. **`before_agent_start`** — starts the spinner interval (250ms ticks); if already running between tool calls, it keeps the existing timer and elapsed time
-2. **`agent_end`** — stops the spinner and clears the text
-3. **`session_shutdown`** — safety cleanup
+| Event | Behavior |
+|-------|----------|
+| `session_start` | Captures UI context (no spinner yet) |
+| `before_agent_start` | Starts spinner interval (100ms ticks); resumes seamlessly between tool calls |
+| `agent_end` | Stops spinner and clears message |
+| `session_shutdown` | Cleanup |
 
-Phrase transitions happen every 12 seconds (48 ticks × 250ms) using the same tick as the spinner animation.
+Phrase transitions occur every ~4.8 seconds (48 ticks × 100ms).
+
+## Commands/Tools
+
+None. This extension only listens to lifecycle events.
 
 ## Removing
 
