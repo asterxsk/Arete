@@ -1,5 +1,6 @@
 # Ignore everything by default
 *
+!.pi/
 
 # But not these files in the root
 !.gitignore
