@@ -98,7 +98,7 @@ function formatElapsed(totalSeconds: number): string {
 }
 
 function pushToUI(text: string): void {
-	if (currentCtx?.hasUI && ((globalThis as any).__pi_subagent_running_count ?? 0) <= 0) {
+	if (currentCtx?.hasUI) {
 		currentCtx.ui.setWorkingMessage(text);
 	}
 }

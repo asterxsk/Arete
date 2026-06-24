@@ -40,11 +40,8 @@ class CompactToolBox implements Component {
 		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways, duration } = this.opts;
 		const lines: string[] = [];
 		const star = state === "pending" ? "\x1b[32m✻\x1b[0m" : state === "error" ? "\x1b[31m✻\x1b[0m" : "\x1b[37m✻\x1b[0m";
-		const durStr = duration !== undefined ? ` [${formatDuration(duration)}]` : "";
-		let header = ` ${star} \x1b[38;2;255;165;0m${toolName}\x1b[0m${durStr}`;
+		let header = ` ${star} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
 		if (suffix) header += ` ${suffix}`;
-		// Add blank line above to separate from spinner
-		lines.push("");
 		lines.push(truncateToWidth(header, width));
 		if (expanded) {
 			if (argsLine) lines.push(truncateToWidth(`    ${argsLine}`, width));
@@ -52,12 +49,10 @@ class CompactToolBox implements Component {
 			if (footer) lines.push(truncateToWidth(`    ${footer}`, width));
 		} else {
 			// Single-line compact mode
-			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
+			const parts: string[] = [`[${truncateToWidth(argsLine, Math.max(10, width - 26))}]`, "(ctrl+o to expand)"];
 			header += ` ${parts.join(" ")}`;
-			lines[1] = truncateToWidth(header, width);
+			lines[0] = truncateToWidth(header, width);
 		}
-		// Add blank line below to separate from spinner
-		lines.push("");
 		this.cachedWidth = width;
 		this.cachedLines = lines;
 		return lines;
@@ -410,11 +405,8 @@ async function runSubagent(
 		onUpdate?.(progress);
 	}, 150);
 
-	// Periodic timer update so duration ticks even without tool events
-	const timerInterval = setInterval(() => {
-		progress.durationMs = Date.now() - startTime;
-		onUpdate?.(progress);
-	}, 1000);
+	// Timer removed: We no longer display a live duration in the UI,
+	// so periodic UI updates are unnecessary and cause terminal ghost frames.
 
 	const exitCode = await new Promise<number>((resolve) => {
 		const proc = spawn(command, spawnArgs, {
@@ -532,7 +524,7 @@ async function runSubagent(
 		}
 	});
 
-	clearInterval(timerInterval);
+	// Timer interval cleared
 
 	// Cleanup temp dir
 	try {
@@ -900,12 +892,10 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			(globalThis as any).__pi_subagent_running_count = ((globalThis as any).__pi_subagent_running_count ?? 0) + 1;
 			try {
 			const cwd = ctx.cwd;
 			const parentModel = ctx.model ? `${(ctx.model as any).provider}/${ctx.model.id}` : undefined;
 			const resolvedModel = resolveSubagentModel(parentModel);
-			console.log(`[subagent-debug] parentModel=${parentModel} resolvedModel=${resolvedModel} stored=${getSubagentModel()}`);
 
 			// Validate mode
 			if (params.tasks && params.tasks.length > 0) {
@@ -987,12 +977,22 @@ export default function (pi: ExtensionAPI) {
 					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
 					progress: { agent: params.agent!, status: "running" as const, task: params.task!, recentTools: [], toolCount: 0, tokens: 0, durationMs: 0, lastMessage: "" },
 				};
+				let lastUpdate = 0;
 				const result = await runSubagent(agent, params.task, params.cwd ?? cwd, resolvedModel, signal, (progress) => {
 					liveResult.progress = progress;
-					onUpdate?.({
-						content: [{ type: "text", text: "(running...)" }],
-						details: { mode: "single" as const, results: [liveResult] },
-					});
+					const now = Date.now();
+					if (now - lastUpdate > 150) {
+						lastUpdate = now;
+						onUpdate?.({
+							content: [{ type: "text", text: "(running...)" }],
+							details: { mode: "single" as const, results: [liveResult] },
+						});
+					}
+				});
+				// Ensure final progress is flushed
+				onUpdate?.({
+					content: [{ type: "text", text: "(running...)" }],
+					details: { mode: "single" as const, results: [liveResult] },
 				});
 
 				const isError = result.exitCode !== 0 || !!result.progress.error;

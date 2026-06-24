@@ -269,38 +269,107 @@ export default function (pi: ExtensionAPI) {
   // Flag so other extensions (like tasks) know we are active
   (globalThis as any).__pi_betterui_enabled = true;
 
-  // Intercept all tool registrations to compactify 'run_command' and 'manage_task' which are defined in the tasks extension
+  // Intercept and patch all tools to apply compact rendering format
+  const patchTool = (tool: any) => {
+    const EXCLUDED_TOOLS = new Set(["subagent", "read", "write", "edit", "bash", "ls", "grep", "find"]);
+    if (EXCLUDED_TOOLS.has(tool.name)) return;
+
+    if (tool.name === "todo") {
+      tool.renderCall = () => noOp();
+      tool.renderResult = () => noOp();
+      return;
+    }
+
+    if (tool.__compactui_patched) return;
+    tool.__compactui_patched = true;
+    tool.renderShell = "self";
+
+    tool.renderCall = (args: any, theme: any, context: any) => {
+      if (context.expanded) return line("");
+      let argsLine = "??";
+      if (tool.name === "run_command") argsLine = args.CommandLine as string || "?";
+      else if (tool.name === "manage_task") argsLine = `${args.Action} ${args.TaskId || ""}`.trim();
+      else if (tool.name === "schedule") {
+        if (args.DurationSeconds) argsLine = `${args.DurationSeconds}s "${args.Prompt}"`;
+        else if (args.CronExpression) argsLine = `cron "${args.CronExpression}" "${args.Prompt}"`;
+      }
+      else {
+        argsLine = Object.values(args || {}).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(" ");
+        if (argsLine.length > 30) argsLine = argsLine.slice(0, 27) + "...";
+      }
+      return compactCall(tool.name, argsLine, theme);
+    };
+    
+    tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
+      if (!opts.expanded) return noOp();
+      
+      let argsLine = "??";
+      if (tool.name === "run_command") argsLine = context.args.CommandLine as string || "?";
+      else if (tool.name === "manage_task") argsLine = `${context.args.Action} ${context.args.TaskId || ""}`.trim();
+      else if (tool.name === "schedule") {
+        if (context.args.DurationSeconds) argsLine = `${context.args.DurationSeconds}s "${context.args.Prompt}"`;
+        else if (context.args.CronExpression) argsLine = `cron "${context.args.CronExpression}" "${context.args.Prompt}"`;
+      }
+      else {
+        argsLine = Object.values(context.args || {}).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(" ");
+        if (argsLine.length > 30) argsLine = argsLine.slice(0, 27) + "...";
+      }
+      
+      const content = result.content?.[0];
+      const text = content?.type === "text" ? content.text : "";
+      const lines = text.split("\n").filter((l: string) => l.trim());
+      const durationS = (result.details as any)?._durationS ?? 0.0;
+      
+      return expandedBox(theme, tool.name, argsLine, lines, durationS, 50);
+    };
+  };
+
+  const registeredTools = (pi as any).tools ? ((pi as any).tools instanceof Map ? Array.from((pi as any).tools.values()) : Object.values((pi as any).tools)) : ((pi as any).getTools ? (pi as any).getTools() : []);
+  for (const tool of registeredTools) {
+    if (tool && typeof tool === 'object') patchTool(tool);
+  }
+
+  // Patch the instance's registerTool
   const origRegister = pi.registerTool.bind(pi);
   pi.registerTool = (tool: any) => {
-    if (tool.name === "run_command" || tool.name === "manage_task") {
-      tool.renderCall = (args: any, theme: any, context: any) => {
-        if (context.expanded) return line("");
-        let argsLine = "??";
-        if (tool.name === "run_command") argsLine = args.CommandLine as string || "?";
-        else if (tool.name === "manage_task") argsLine = `${args.Action} ${args.TaskId || ""}`.trim();
-        return compactCall(tool.name, argsLine, theme);
-      };
-      
-      tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
-        if (!opts.expanded) return noOp();
-        
-        let argsLine = "??";
-        if (tool.name === "run_command") argsLine = context.args.CommandLine as string || "?";
-        else if (tool.name === "manage_task") argsLine = `${context.args.Action} ${context.args.TaskId || ""}`.trim();
-        
-        const content = result.content?.[0];
-        const text = content?.type === "text" ? content.text : "";
-        const lines = text.split("\n").filter((l: string) => l.trim());
-        const durationS = (result.details as any)?._durationS ?? 0.0;
-        
-        return expandedBox(theme, tool.name, argsLine, lines, durationS, 50);
-      };
-    }
+    patchTool(tool);
     origRegister(tool);
   };
 
+  // Patch the prototype's registerTool to catch other extensions (since each extension might get a bound copy of pi)
+  const proto = Object.getPrototypeOf(pi);
+  if (proto && typeof proto.registerTool === "function" && !(proto as any).__compactui_patched_register) {
+    (proto as any).__compactui_patched_register = true;
+    const origProtoRegister = proto.registerTool;
+    proto.registerTool = function(tool: any) {
+      patchTool(tool);
+      return origProtoRegister.call(this, tool);
+    };
+  }
+
+  // Also expose patchTool globally as a fallback for extensions that get a completely fresh pi object
+  (globalThis as any).__pi_patchTool = patchTool;
+
   if (!patchedAssistant) {
     try {
+        const originalUserRender = UserMessageComponent.prototype.render;
+        UserMessageComponent.prototype.render = function(width: number) {
+            const lines = originalUserRender.call(this, width);
+            if (lines.length > 0) {
+                return ["", ...lines];
+            }
+            return lines;
+        };
+
+        const originalAssistantRender = AssistantMessageComponent.prototype.render;
+        AssistantMessageComponent.prototype.render = function(width: number) {
+            const lines = originalAssistantRender.call(this, width);
+            if (lines.length > 0) {
+                return ["", ...lines];
+            }
+            return lines;
+        };
+
         AssistantMessageComponent.prototype.updateContent = function(message: any) {
             this.lastMessage = message;
             this.contentContainer.clear();
@@ -361,6 +430,7 @@ export default function (pi: ExtensionAPI) {
   const unknownTools = new Set<string>();
 
   // ── Detect unknown tool names ───────────────────────────────────────
+  const KNOWN_TOOLS = new Set(["read", "write", "edit", "bash", "grep", "find", "ls", "web_search", "web_fetch", "run_command", "manage_task", "schedule", "subagent", "todo"]);
   pi.on("tool_call", async (event) => {
     if (!KNOWN_TOOLS.has(event.toolName) && !unknownTools.has(event.toolName)) {
       unknownTools.add(event.toolName);

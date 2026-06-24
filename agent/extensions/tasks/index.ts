@@ -43,49 +43,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { Input, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 
-// ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
-interface _CBOpts {
-	toolName: string;
-	argsLine: string;
-	footer?: string;
-	state: "pending" | "done" | "error";
-	previewLines?: string[];
-	expanded?: boolean;
-	footerAlways?: boolean;
-	suffix?: string;
-}
 
-class CompactResult implements Component {
-	private opts: _CBOpts;
-	private cachedWidth?: number;
-	private cachedLines?: string[];
-	constructor(opts: _CBOpts) { this.opts = opts; }
-	invalidate(): void { this.cachedWidth = undefined; this.cachedLines = undefined; }
-	render(width: number): string[] {
-		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways } = this.opts;
-		const lines: string[] = [];
-		const dot = state === "pending" ? "\x1b[2m●\x1b[0m" : state === "error" ? "\x1b[31m●\x1b[0m" : "\x1b[32m●\x1b[0m";
-		let header = `${dot} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
-		if (suffix) header += ` ${suffix}`;
-		lines.push(truncateToWidth(header, width));
-		if (expanded) {
-			if (argsLine) lines.push(truncateToWidth(`  │ ${argsLine}`, width));
-			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${pl}`, width));
-			if (footer) lines.push(truncateToWidth(`  └ ${footer}`, width));
-		} else {
-			// Single-line compact mode
-			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
-			header += ` ${parts.join(" ")}`;
-			lines[0] = truncateToWidth(header, width);
-		}
-		this.cachedWidth = width;
-		this.cachedLines = lines;
-		return lines;
-	}
-}
-
-const emptyComponent = { render: () => [] as string[], invalidate() {}, handleInput() {} };
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -595,7 +553,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── run_command tool (LLM-callable) ────────────────────────────────
 
-	pi.registerTool({
+	const runCommandTool = {
 		name: "run_command",
 		label: "Run Command",
 		description: "PROPOSE a command to run on behalf of the user. " +
@@ -609,7 +567,7 @@ export default function (pi: ExtensionAPI) {
 			WaitMsBeforeAsync: Type.Optional(Type.Number({ description: "Milliseconds to wait before sending to background" })),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
 			const { CommandLine, Cwd, WaitMsBeforeAsync } = params as {
 				CommandLine: string;
 				Cwd?: string;
@@ -639,39 +597,13 @@ export default function (pi: ExtensionAPI) {
 				details: { taskId: entry.id, _callArgs: params },
 			};
 		},
-		renderShell: "self",
-		renderCall() { return emptyComponent; },
-		renderResult(result, { isPartial, expanded }) {
-			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
-			if (isPartial) return new CompactResult({ toolName: "run_command", argsLine: "running...", state: "pending" });
-			const content = result.content[0];
-			const text = content?.type === "text" ? content.text : "";
-			if (result.isError) return new CompactResult({ toolName: "run_command", argsLine: text ? text.split("\n")[0] : "error", state: "error" });
-			
-			const callArgs = (result.details as Record<string, unknown>)?._callArgs as Record<string, unknown> | undefined;
-			const cmd = callArgs?.CommandLine as string || "done";
-			let argsLine = expanded ? cmd : (cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd);
-			
-			const allLines = text.split("\n").filter(l => l.trim());
-			let previewLines: string[] | undefined;
-			if (expanded) {
-				previewLines = allLines.map(l => l.length > 120 ? l.slice(0, 117) + "..." : l);
-			}
-
-			return new CompactResult({
-				toolName: "run_command",
-				argsLine,
-				state: "done",
-				previewLines,
-				footer: allLines.length > 0 ? `${allLines.length} line${allLines.length === 1 ? "" : "s"}` : undefined,
-				expanded,
-			});
-		},
-	});
+	};
+	if ((globalThis as any).__pi_patchTool) (globalThis as any).__pi_patchTool(runCommandTool);
+	pi.registerTool(runCommandTool);
 
 	// ── manage_task tool (LLM-callable) ────────────────────────────────
 
-	pi.registerTool({
+	const manageTaskTool = {
 		name: "manage_task",
 		label: "Manage Task",
 		description: "Manage background tasks. Use this tool to list running tasks or interact with tasks that were sent to the background.\n" +
@@ -683,7 +615,7 @@ export default function (pi: ExtensionAPI) {
 			Input: Type.Optional(Type.String({ description: "The input to send to the task (for 'send_input')." })),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
 			const _execute = async () => {
 				const { Action, TaskId, Input } = params as {
 					Action: string;
@@ -740,38 +672,9 @@ export default function (pi: ExtensionAPI) {
 			res.details = { ...(res.details || {}), _callArgs: params };
 			return res;
 		},
-		renderShell: "self",
-		renderCall() { return emptyComponent; },
-		renderResult(result, { isPartial, expanded }) {
-			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
-			if (isPartial) return new CompactResult({ toolName: "manage_task", argsLine: "managing...", state: "pending" });
-			const content = result.content[0];
-			const text = content?.type === "text" ? content.text : "";
-			if (result.isError) return new CompactResult({ toolName: "manage_task", argsLine: text ? text.split("\n")[0] : "error", state: "error" });
-			
-			const callArgs = (result.details as Record<string, unknown>)?._callArgs as Record<string, unknown> | undefined;
-			let argsLine = "done";
-			if (callArgs) {
-				argsLine = `${callArgs.Action}`;
-				if (callArgs.TaskId) argsLine += ` ${callArgs.TaskId}`;
-			}
-			
-			const allLines = text.split("\n").filter(l => l.trim());
-			let previewLines: string[] | undefined;
-			if (expanded) {
-				previewLines = allLines.map(l => l.length > 120 ? l.slice(0, 117) + "..." : l);
-			}
-			
-			return new CompactResult({
-				toolName: "manage_task",
-				argsLine: expanded ? argsLine : argsLine,
-				state: "done",
-				previewLines,
-				footer: allLines.length > 0 ? `${allLines.length} line${allLines.length === 1 ? "" : "s"}` : undefined,
-				expanded,
-			});
-		},
-	});
+	};
+	if ((globalThis as any).__pi_patchTool) (globalThis as any).__pi_patchTool(manageTaskTool);
+	pi.registerTool(manageTaskTool);
 }
 
 class TasksUIComponent {

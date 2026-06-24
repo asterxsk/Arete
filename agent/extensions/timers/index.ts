@@ -26,49 +26,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { Input, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 
-// ── Self-contained CompactToolBox + emptyComponent (no dependency on betterui) ──
-interface _CBOpts {
-	toolName: string;
-	argsLine: string;
-	footer?: string;
-	state: "pending" | "done" | "error";
-	previewLines?: string[];
-	expanded?: boolean;
-	footerAlways?: boolean;
-	suffix?: string;
-}
 
-class CompactResult implements Component {
-	private opts: _CBOpts;
-	private cachedWidth?: number;
-	private cachedLines?: string[];
-	constructor(opts: _CBOpts) { this.opts = opts; }
-	invalidate(): void { this.cachedWidth = undefined; this.cachedLines = undefined; }
-	render(width: number): string[] {
-		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways } = this.opts;
-		const lines: string[] = [];
-		const dot = state === "pending" ? "\x1b[2m●\x1b[0m" : state === "error" ? "\x1b[31m●\x1b[0m" : "\x1b[32m●\x1b[0m";
-		let header = `${dot} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
-		if (suffix) header += ` ${suffix}`;
-		lines.push(truncateToWidth(header, width));
-		if (expanded) {
-			if (argsLine) lines.push(truncateToWidth(`  │ ${argsLine}`, width));
-			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${pl}`, width));
-			if (footer) lines.push(truncateToWidth(`  └ ${footer}`, width));
-		} else {
-			// Single-line compact mode
-			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
-			header += ` ${parts.join(" ")}`;
-			lines[0] = truncateToWidth(header, width);
-		}
-		this.cachedWidth = width;
-		this.cachedLines = lines;
-		return lines;
-	}
-}
-
-const emptyComponent = { render: () => [] as string[], invalidate() {}, handleInput() {} };
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -518,12 +476,11 @@ export default function (pi: ExtensionAPI) {
 
 	// ── schedule tool (LLM-callable) ──────────────────────────────────────
 
-	pi.registerTool({
+	const scheduleTool = {
 		name: "schedule",
 		label: "Schedule",
 		description: "Schedule a one-shot timer or a recurring cron job that sends notifications in the background.",
 		promptSnippet: "Schedule a timer. Fired timer notifications appear silently at the top of the next tool response.",
-		renderShell: "self",
 		parameters: Type.Object({
 			DurationSeconds: Type.Optional(Type.String({ description: "Duration in seconds (e.g. '300')" })),
 			CronExpression: Type.Optional(Type.String({ description: "Not supported natively. Use DurationSeconds." })),
@@ -532,7 +489,7 @@ export default function (pi: ExtensionAPI) {
 			TimerCondition: Type.Optional(Type.String()),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
 			const _execute = async () => {
 				const { DurationSeconds, CronExpression, MaxIterations, Prompt, TimerCondition } = params as {
 				DurationSeconds?: string;
@@ -588,44 +545,9 @@ export default function (pi: ExtensionAPI) {
 			res.details = { ...(res.details || {}), _callArgs: params };
 			return res;
 		},
-
-		renderCall() { return emptyComponent; },
-
-		renderResult(result, { isPartial, expanded }) {
-			if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
-			if (isPartial) return new CompactResult({ toolName: "schedule", argsLine: "...", state: "pending" });
-			const content = result.content[0];
-			const text = content?.type === "text" ? content.text : "";
-			if (result.isError || text.startsWith("Error")) {
-				const firstLine = text.split("\n")[0] || "error";
-				return new CompactResult({ toolName: "schedule", argsLine: firstLine, state: "error" });
-			}
-			const allLines = text.split("\n").filter((l) => l.trim());
-			
-			const callArgs = (result.details as Record<string, unknown>)?._callArgs as Record<string, unknown> | undefined;
-			let argsLine = "done";
-			if (callArgs) {
-				const parts: string[] = [];
-				if (callArgs.DurationSeconds) parts.push(`${callArgs.DurationSeconds}s`);
-				if (callArgs.Prompt) parts.push(`"${callArgs.Prompt}"`);
-				argsLine = parts.join(" ");
-			}
-
-			let previewLines: string[] | undefined;
-			if (expanded) {
-				previewLines = allLines.map((l) => l.length > 120 ? l.slice(0, 117) + "..." : l);
-			}
-			const restCount = allLines.length - 1;
-			return new CompactResult({
-				toolName: "schedule",
-				argsLine,
-				state: "done",
-				previewLines,
-				footer: restCount > 0 ? `${restCount} line${restCount === 1 ? "" : "s"}` : undefined,
-				expanded,
-			});
-		},
-	});
+	};
+	if ((globalThis as any).__pi_patchTool) (globalThis as any).__pi_patchTool(scheduleTool);
+	pi.registerTool(scheduleTool);
 }
 
 class TimersUIComponent {
