@@ -9,6 +9,7 @@ agent/npm
 agent/trust.json
 agent/pi-hermes-memory/
 agent/projects-memory/
+agent/docs/
 
 # === Personal Data & History ===
 # Project-specific interaction history
