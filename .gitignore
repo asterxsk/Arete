@@ -1,35 +1,31 @@
-# === Sensitive Data ===
-# Contains OAuth tokens and private credentials
-agent/auth.json
-agent/trust.json
-pi-acp/
+# Ignore everything by default
+*
 
-# Contains provider configurations and potentially API keys
-agent/models.json
-agent/settings.json
-agent/npm/
+# But not these files in the root
+!.gitignore
+!README*
+!LICENSE
+
+# In the agent folder, ignore everything
+agent/*
+# But not these specific files/folders in agent
+!agent/keybinds.json
+!agent/extensions/
+
+# Specific directories to ignore regardless of above
+pi-acp/
 agent/pi-hermes-memory/
 agent/projects-memory/
-agent/docs/
-
-# === Personal Data & History ===
-# Project-specific interaction history
 agent/sessions/
-
-# === Platform-specific Binaries ===
-# Executables like rg.exe
+agent/docs/
+agent/skills/
+agent/npm/
 agent/bin/
-*.exe
-
-# === Cache & Generated Files ===
-# Web search cache
-web-search.json
-# Windows-specific ghost file
-nul
-
-# === Local Skills ===
-# Skills are usually installed locally via pi/npx
-agent/skills/
-agent/extensions/commandcode-provider/
-agent/skills/
 .commandcode/
+agent/auth.json
+agent/trust.json
+agent/models.json
+agent/settings.json
+web-search.json
+nul
+*.exe
