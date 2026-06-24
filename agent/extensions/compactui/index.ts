@@ -12,6 +12,7 @@
 
 import type { ExtensionAPI, EditToolDetails } from "@earendil-works/pi-coding-agent";
 import {
+  AssistantMessageComponent,
   createBashTool,
   createEditTool,
   createFindTool,
@@ -20,7 +21,8 @@ import {
   createReadTool,
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, visibleWidth, Container, Markdown, Spacer, Text, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -28,10 +30,104 @@ const INDENT = " ";
 const HINT = " (ctrl+o to expand)";
 const MAX_LINES = 5;
 const TRUNCATED_TOOLS = new Set(["bash", "powershell", "run_command"]);
-const HERMES_TOOLS = new Set(["memory", "skill_manage", "session_search", "memory_search"]);
-const HERMES_MAX_LINES = 8;
+// HERMES_TOOLS removed — memory, skill_manage, session_search, memory_search
+// now have their own renderCall/renderResult in pi-hermes-memory extension
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+function colorThinkingText(text: string): string {
+    return `\x1b[38;2;112;112;128m${text}\x1b[39m`;
+}
+
+function italicText(text: string): string {
+    return `\x1b[3m${text}\x1b[23m`;
+}
+
+interface ThinkingBlockOptions {
+    color?: (text: string) => string;
+    italic?: boolean;
+}
+
+class ThinkingBlock extends Container {
+    private text: string;
+    private paddingX: number;
+    private paddingY: number;
+    private markdownTheme: any;
+    private options: ThinkingBlockOptions;
+
+    constructor(text: string, paddingX = 0, paddingY = 0, markdownTheme: any = undefined, options: ThinkingBlockOptions = {}) {
+        super();
+        this.text = text;
+        this.paddingX = paddingX;
+        this.paddingY = paddingY;
+        this.markdownTheme = markdownTheme;
+        this.options = options;
+    }
+
+    render(width: number): string[] {
+        if (!this.text || this.text.trim() === "") {
+            return [];
+        }
+        
+        const contentWidth = Math.max(1, width - this.paddingX * 2 - 2);
+        const leftPad = " ".repeat(this.paddingX);
+        const textLines = this.text.split("\n");
+        
+        const visualLines: { text: string; isEmpty: boolean }[] = [];
+        for (const line of textLines) {
+            if (line.trim() === "") {
+                visualLines.push({ text: "", isEmpty: true });
+                continue;
+            }
+            const wrappedLines = wrapTextWithAnsi(line, contentWidth);
+            for (const wrappedLine of wrappedLines) {
+                visualLines.push({ text: wrappedLine, isEmpty: false });
+            }
+        }
+        if (visualLines.length === 0) return [];
+        
+        const result: string[] = [];
+        const lastNonEmptyIdx = visualLines.reduce((acc, line, i) => line.isEmpty ? acc : i, 0);
+        const isSingleLine = visualLines.filter(l => !l.isEmpty).length <= 1;
+
+        for (let i = 0; i < visualLines.length; i++) {
+            const vl = visualLines[i];
+            if (vl.isEmpty) {
+                result.push(leftPad + colorThinkingText("│"));
+                continue;
+            }
+            let prefix: string;
+            if (isSingleLine) {
+                prefix = "└ ";
+            }
+            else if (i === 0) {
+                prefix = "│ ";
+            }
+            else if (i === lastNonEmptyIdx) {
+                prefix = "└ ";
+            }
+            else {
+                prefix = "│ ";
+            }
+            result.push(leftPad + colorThinkingText(prefix) + this.applyStyle(vl.text));
+        }
+        return result;
+    }
+
+    private applyStyle(text: string): string {
+        if (!this.options) return text;
+        let styled = text;
+        if (this.options.color) {
+            styled = this.options.color(styled);
+        }
+        if (this.options.italic) {
+            styled = italicText(styled);
+        }
+        return styled;
+    }
+}
+
+let patchedAssistant = false;
 
 function line(text: string): Component {
   return {
@@ -39,6 +135,14 @@ function line(text: string): Component {
       // Always truncate to width to prevent overflow
       return [truncateToWidth(text, width, "...")];
     },
+    invalidate() {},
+  };
+}
+
+// No-op component that renders nothing (avoids extra newline)
+function noOp(): Component {
+  return {
+    render() { return []; },
     invalidate() {},
   };
 }
@@ -164,6 +268,63 @@ export default function (pi: ExtensionAPI) {
   // Enable compact UI for web search and other extensions that check this flag
   (globalThis as any).__pi_betterui_enabled = true;
 
+  if (!patchedAssistant) {
+    try {
+        AssistantMessageComponent.prototype.updateContent = function(message: any) {
+            this.lastMessage = message;
+            this.contentContainer.clear();
+            const hasVisibleContent = message.content.some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+            
+            for (let i = 0; i < message.content.length; i++) {
+                const content = message.content[i];
+                if (content.type === "text" && content.text.trim()) {
+                    this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+                }
+                else if (content.type === "thinking" && content.thinking.trim()) {
+                    const hasVisibleContentAfter = message.content
+                        .slice(i + 1)
+                        .some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+                    
+                    if (this.hideThinkingBlock) {
+                        this.contentContainer.addChild(new Text(italicText(colorThinkingText(this.hiddenThinkingLabel)), 1, 0));
+                        if (hasVisibleContentAfter) {
+                            this.contentContainer.addChild(new Spacer(1));
+                        }
+                    }
+                    else {
+                        this.contentContainer.addChild(new ThinkingBlock(content.thinking.trim(), 1, 0, this.markdownTheme, {
+                            color: colorThinkingText,
+                            italic: true,
+                        }));
+                        if (hasVisibleContentAfter) {
+                            this.contentContainer.addChild(new Spacer(1));
+                        }
+                    }
+                }
+            }
+            
+            const hasToolCalls = message.content.some((c: any) => c.type === "toolCall");
+            this.hasToolCalls = hasToolCalls;
+            if (!hasToolCalls) {
+                if (message.stopReason === "aborted") {
+                    const abortMessage = message.errorMessage && message.errorMessage !== "Request was aborted"
+                        ? message.errorMessage
+                        : "Operation aborted";
+                    this.contentContainer.addChild(new Text(`\x1b[38;2;255;85;85m${abortMessage}\x1b[39m`, 1, 0));
+                }
+                else if (message.stopReason === "error") {
+                    const errorMsg = message.errorMessage || "Unknown error";
+                    this.contentContainer.addChild(new Spacer(1));
+                    this.contentContainer.addChild(new Text(`\x1b[38;2;255;85;85mError: ${errorMsg}\x1b[39m`, 1, 0));
+                }
+            }
+        };
+        patchedAssistant = true;
+    } catch (e) {
+        console.error("Failed to patch AssistantMessageComponent for thinking-ui in compactui extension:", e);
+    }
+  }
+
   const cwd = process.cwd();
   const unknownTools = new Set<string>();
 
@@ -214,27 +375,8 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    // Hermes-memory tools: strip emojis + truncate
-    if (HERMES_TOOLS.has(event.toolName)) {
-      const fullText = content
-        .filter((p): p is { type: "text"; text: string } => p.type === "text" && typeof p.text === "string")
-        .map((p) => p.text)
-        .join("\n");
-
-      let modified = false;
-      const newContent = content.map((part) => {
-        if (part.type !== "text" || !part.text) return part;
-        let text = stripEmojis(part.text);
-        const lines = text.split("\n");
-        if (lines.length > HERMES_MAX_LINES) {
-          const hidden = lines.length - HERMES_MAX_LINES;
-          text = lines.slice(0, HERMES_MAX_LINES).join("\n") + `\n... (${hidden} more lines, ${lines.length} total)`;
-        }
-        if (text !== part.text) { modified = true; return { ...part, text }; }
-        return part;
-      });
-      return { content: modified ? newContent : undefined, details: { ...event.details, _fullOutput: fullText } };
-    }
+    // Hermes-memory tools now have their own renderCall/renderResult
+    // in the pi-hermes-memory extension — skip them here
 
     if (!TRUNCATED_TOOLS.has(event.toolName)) return;
 
@@ -276,7 +418,7 @@ export default function (pi: ExtensionAPI) {
       return compactCall("read", args.path ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const details = result.details as Record<string, unknown> | undefined;
       const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
       const lines = full.split("\n");
@@ -306,7 +448,7 @@ export default function (pi: ExtensionAPI) {
       return compactCall("write", args.path ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const details = result.details as Record<string, unknown> | undefined;
       const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
       const lines = full.split("\n");
@@ -338,9 +480,9 @@ export default function (pi: ExtensionAPI) {
     },
     renderResult(result, { expanded }, theme, context) {
       const details = result.details as EditToolDetails | undefined;
-      if (!details?.diff) return line("");
+      if (!details?.diff) return noOp();
       const diffLines = details.diff.split("\n");
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const durationS = (result.details as Record<string, unknown>)?._durationS as number ?? -1;
       return diffExpandedBox(theme, "edit", context.args.path ?? "", diffLines, durationS, 50);
     },
@@ -365,7 +507,7 @@ export default function (pi: ExtensionAPI) {
     renderResult(result, { expanded }, theme, context) {
       const details = result.details as Record<string, unknown> | undefined;
       const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const lines = full.split("\n");
       const durationS = (details?._durationS as number) ?? -1;
       const cmd = context.args.command || (details?.command as string) || "";
@@ -392,7 +534,7 @@ export default function (pi: ExtensionAPI) {
     renderResult(result, { expanded }, theme, context) {
       const details = result.details as Record<string, unknown> | undefined;
       const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const lines = full.split("\n").filter((l: string) => l.trim());
       const durationS = (details?._durationS as number) ?? -1;
       return expandedBox(theme, "ls", context.args.path || ".", lines, durationS, 50);
@@ -418,7 +560,7 @@ export default function (pi: ExtensionAPI) {
     renderResult(result, { expanded }, theme, context) {
       const details = result.details as Record<string, unknown> | undefined;
       const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const lines = full.split("\n").filter((l: string) => l.trim());
       const durationS = (details?._durationS as number) ?? -1;
       return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, durationS, 50);
@@ -444,10 +586,12 @@ export default function (pi: ExtensionAPI) {
     renderResult(result, { expanded }, theme, context) {
       const details = result.details as Record<string, unknown> | undefined;
       const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
-      if (!expanded) return line("");
+      if (!expanded) return noOp();
       const lines = full.split("\n").filter((l: string) => l.trim());
       const durationS = (details?._durationS as number) ?? -1;
       return expandedBox(theme, "find", (context.args.pattern ?? "?") + (context.args.path ? " " + context.args.path : ""), lines, durationS, 50);
     },
   });
+
+
 }

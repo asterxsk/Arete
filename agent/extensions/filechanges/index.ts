@@ -4,6 +4,7 @@ import {
 	isToolCallEventType,
 	isWriteToolResult,
 } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { createTwoFilesPatch } from "diff";
 import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
@@ -339,9 +340,47 @@ async function ensureParentDir(absPath: string): Promise<void> {
 			.filter(Boolean);
 	}
 
+	function buildFullView(tracked: Map<string, TrackedFile>, theme?: any): string[] {
+		if (tracked.size === 0) return ["No file changes tracked."];
+
+		const items = [...tracked.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+		const lines: string[] = [];
+
+		for (const t of items) {
+			const tag = t.kind === "new" ? "+NEW" : "EDIT";
+			const tagStr = theme ? theme.fg(t.kind === "new" ? "success" : "accent", tag) : tag;
+			const pathStr = theme ? theme.fg("default", t.displayPath) : t.displayPath;
+			const stats = `(+${t.added}/-${t.removed})`;
+
+			lines.push(`${tagStr} ${pathStr} ${stats}`);
+
+			// Show first few lines of diff
+			if (t.diff) {
+				const diffLines = t.diff.split("\n").slice(0, 12);
+				for (const dl of diffLines) {
+					if (dl.startsWith("@@") || dl.startsWith("+++") || dl.startsWith("---")) continue;
+					if (dl.startsWith("+")) {
+						lines.push(theme ? theme.fg("success", `  ${dl}`) : `  ${dl}`);
+					} else if (dl.startsWith("-")) {
+						lines.push(theme ? theme.fg("error", `  ${dl}`) : `  ${dl}`);
+					} else if (dl.startsWith(" ")) {
+						lines.push(theme ? theme.fg("dim", `  ${dl}`) : `  ${dl}`);
+					}
+				}
+				const totalDiffLines = t.diff.split("\n").length;
+				if (totalDiffLines > 12) {
+					lines.push(theme ? theme.fg("dim", `  ... ${totalDiffLines - 12} more diff lines (ctrl+o to expand)`) : `  ... ${totalDiffLines - 12} more diff lines`);
+				}
+			}
+			lines.push("");
+		}
+
+		return lines;
+	}
+
 	// Commands
 	pi.registerCommand("filechanges", {
-		description: "Hide or show the filechanges widget. Usage: /filechanges hide | show",
+		description: "Show full file changes view. Usage: /filechanges [hide | show | diff]",
 		handler: async (_args, ctx) => {
 			const args = (_args ?? "").trim().toLowerCase();
 
@@ -359,15 +398,42 @@ async function ensureParentDir(absPath: string): Promise<void> {
 				return;
 			}
 
-			if (args) {
-				ctx.ui.notify("Usage: /filechanges hide | show", "warning");
+			if (args === "diff" || args === "view" || args === "" || !args) {
+				// Show full view of all tracked changes
+				if (tracked.size === 0) {
+					ctx.ui.notify("No file changes tracked.", "info");
+					return;
+				}
+
+				const lines = buildFullView(tracked, ctx.ui.theme);
+
+				// Build a custom component for the full view
+				const component = {
+					render(width: number) {
+						const result: string[] = [];
+						for (const l of lines) {
+							if (!l) { result.push(""); continue; }
+							if (visibleWidth(l) <= width) result.push(l);
+							else result.push(truncateToWidth(l, width, "..."));
+						}
+						return result;
+					},
+					invalidate() {},
+					handleInput() {},
+				};
+
+				ctx.ui.setWidget("filechanges-full", component);
+				// Auto-hide after 30 seconds
+				setTimeout(() => {
+					ctx.ui.setWidget("filechanges-full", undefined);
+				}, 30000);
 				return;
 			}
 
-			// No args: toggle visibility
-			widgetHidden = !widgetHidden;
-			updateUi(ctx);
-			ctx.ui.notify(widgetHidden ? "Filechanges widget hidden." : "Filechanges widget shown.", "info");
+			if (args) {
+				ctx.ui.notify("Usage: /filechanges [hide | show | diff]", "warning");
+				return;
+			}
 		},
 	});
 

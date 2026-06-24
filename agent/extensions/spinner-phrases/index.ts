@@ -25,6 +25,15 @@ const RESET = "\x1b[0m";
 
 const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "✻"];
 
+// Custom animation curve — how many ticks each frame stays visible (130ms per tick)
+const FRAME_DWELL: Record<string, number> = {
+	"✦": 1,
+	"✧": 1,
+	"★": 1,
+	"☆": 1,
+	"✻": 5, // emphasize this frame — stays 5× longer
+};
+
 // ── Fun phrases ────────────────────────────────────────────────────
 
 const PHRASES: string[] = [
@@ -60,6 +69,7 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 let startTime = 0;
 let phraseIndex = 0;
 let frameIndex = 0;
+let frameHoldCounter = 0;
 let tickCount = 0;
 let currentCtx: any = null;
 
@@ -88,15 +98,28 @@ function formatElapsed(totalSeconds: number): string {
 }
 
 function pushToUI(text: string): void {
-	if (currentCtx?.hasUI) {
+	if (currentCtx?.hasUI && ((globalThis as any).__pi_subagent_running_count ?? 0) <= 0) {
 		currentCtx.ui.setWorkingMessage(text);
+	}
+}
+
+function getCurrentFrame(): string {
+	return STAR_FRAMES[frameIndex % STAR_FRAMES.length]!;
+}
+
+function advanceFrame(): void {
+	const current = getCurrentFrame();
+	frameHoldCounter++;
+	if (frameHoldCounter >= (FRAME_DWELL[current] ?? 1)) {
+		frameIndex++;
+		frameHoldCounter = 0;
 	}
 }
 
 function buildFullText(phrase: string): string {
 	const elapsed = Math.floor((Date.now() - startTime) / 1000);
 	const timeStr = formatElapsed(elapsed);
-	const plain = `${STAR_FRAMES[frameIndex % STAR_FRAMES.length]} ${phrase} (${timeStr})`;
+	const plain = `${getCurrentFrame()} ${phrase} (${timeStr})`;
 	return `${ORANGE}${plain}${RESET}`;
 }
 
@@ -153,7 +176,7 @@ function tick(): void {
 
 	pushToUI(buildFullText(getPhraseText()));
 
-	frameIndex++;
+	advanceFrame();
 	tickCount++;
 }
 
@@ -171,12 +194,13 @@ function start(ctx: any): void {
 	startTime = Date.now();
 	phraseIndex = Math.floor(Math.random() * PHRASES.length);
 	frameIndex = 0;
+	frameHoldCounter = 0;
 	tickCount = 0;
 
 	ctx.ui.setWorkingIndicator({ frames: [] });
 
 	tick();
-	intervalId = setInterval(tick, 100);
+	intervalId = setInterval(tick, 130);
 }
 
 function stop(): void {

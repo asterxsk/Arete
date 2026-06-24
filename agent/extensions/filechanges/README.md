@@ -14,7 +14,9 @@ Tracks files changed (modified/created) by **pi** via the built-in `edit` and `w
 
 | Command | Description |
 |---------|-------------|
-| `/filechanges` | Toggle widget visibility |
+| `/filechanges` | Show full view of all tracked file changes with diffs |
+| `/filechanges diff` | Same as above (alias) |
+| `/filechanges view` | Same as above (alias) |
 | `/filechanges show` | Show the widget |
 | `/filechanges hide` | Hide the widget |
 | `/filechanges-accept` | Accept changes (keep files, clear log) |

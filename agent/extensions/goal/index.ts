@@ -13,7 +13,7 @@
  *   /goal resume                 — Resume a paused goal
  *
  * The agent receives the goal and works toward it autonomously. After each
- * response, this extension checks if the response contains [GOAL_ACCOMPLISHED].
+ * response, this extension checks if the response contains ✻ Accomplished!.
  * If not, it sends a follow-up continuation message with progress context.
  * If yes, the goal is marked complete and the loop ends.
  *
@@ -33,7 +33,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 const GOAL_WIDGET_ID = "goal-status";
 let maxTurns = 200;
 const BRIDGE_KEY = "__pi_goal_state";
-const ACCOMPLISHED_MARKER = "[GOAL_ACCOMPLISHED]";
+const ACCOMPLISHED_MARKER = "✻ Accomplished!";
+const DEFAULT_MAX_DURATION_MS = 1_800_000; // 30 minutes
+let maxDurationMs = DEFAULT_MAX_DURATION_MS;
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,7 @@ interface GoalState {
 	paused: boolean;
 	locked: boolean; // prevents double-continuations from overlapping agent_end
 	lastContinuationAt: number;
+	sessionId?: string;
 }
 
 interface GoalBridge {
@@ -58,7 +61,6 @@ interface GoalBridge {
 	getHistory(): GoalEntry[];
 	setCurrent(state: GoalState | null): void;
 	addHistory(entry: GoalEntry): void;
-	getStatusWidgetLines(): string[];
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -69,10 +71,13 @@ let goalHistory: GoalEntry[] = [];
 // ── Global bridge (survives session compacts) ─────────────────────────────
 
 function installBridge(): GoalBridge {
-	// Restore config from last session
-	const savedMaxTurns = (globalThis as any)[BRIDGE_KEY + "_config"] as number | undefined;
-	if (typeof savedMaxTurns === "number" && Number.isFinite(savedMaxTurns) && savedMaxTurns > 0) {
-		maxTurns = savedMaxTurns;
+	// Restore config from last session (supports both old number and new object format)
+	const savedConfig = (globalThis as any)[BRIDGE_KEY + "_config"];
+	if (typeof savedConfig === "number" && Number.isFinite(savedConfig) && savedConfig > 0) {
+		maxTurns = savedConfig;
+	} else if (typeof savedConfig === "object" && savedConfig !== null) {
+		if (typeof savedConfig.maxTurns === "number" && savedConfig.maxTurns > 0) maxTurns = savedConfig.maxTurns;
+		if (typeof savedConfig.maxDurationMs === "number" && savedConfig.maxDurationMs > 0) maxDurationMs = savedConfig.maxDurationMs;
 	}
 
 	const bridge: GoalBridge = {
@@ -85,7 +90,6 @@ function installBridge(): GoalBridge {
 			goalHistory.push(entry);
 			if (goalHistory.length > 50) goalHistory.shift(); // cap at 50
 		},
-		getStatusWidgetLines: () => getWidgetLines(),
 	};
 	(globalThis as any)[BRIDGE_KEY] = bridge;
 	return bridge;
@@ -120,18 +124,15 @@ function buildProgressBar(turns: number, max: number, segments = 10): string {
 	return `[${"█".repeat(filled)}${"░".repeat(empty)}]`;
 }
 
-function getWidgetLines(): string[] {
-	if (!goal) return [];
-
-	const now = Date.now();
-	const elapsed = formatDuration(now - goal.startedAt);
-	const bar = buildProgressBar(goal.turns, maxTurns);			const pauseTag = goal.paused ? "  PAUSED" : "";
-			const stats = `[${goal.turns}/${maxTurns}] ${bar} ${elapsed}${pauseTag}`;
-
-	return [
-		`  ${truncate(goal.text, 80)}`,
-		`  ${stats}`,
-	];
+function getWidgetComponent(): (tui: any, theme: any) => { render: () => string[]; invalidate: () => void } {
+	return (_tui: any, theme: any) => ({
+		render: () => {
+			if (!goal) return [];
+			const prefix = theme.fg("accent", "\u273b Goal ");
+			return [`${prefix}${theme.fg("default", truncate(goal.text, 80))}`];
+		},
+		invalidate: () => {},
+	});
 }
 
 function getStatusText(): string {
@@ -140,9 +141,9 @@ function getStatusText(): string {
 	const now = Date.now();
 	const elapsed = formatDuration(now - goal.startedAt);
 	const bar = buildProgressBar(goal.turns, maxTurns);
-	const pauseTag = goal.paused ? "  PAUSED" : "";
+	const pauseTag = goal.paused ? "  PAUSED" : "";
 	const lines: string[] = [
-		` Goal: ${goal.text}`,
+		` Goal: ${goal.text}`,
 		`   Turns: ${goal.turns}/${maxTurns} ${bar}`,
 		`   Elapsed: ${elapsed}${pauseTag}`,
 	];
@@ -153,10 +154,10 @@ function formatHistory(): string {
 	if (goalHistory.length === 0) return "No completed goals yet.";
 
 	const labels: Record<string, string> = {
-		accomplished: "",
-		cleared: "",
-		"max-turns": "",
-		cancelled: "",
+		accomplished: "",
+		cleared: "",
+		"max-turns": "",
+		cancelled: "",
 	};
 
 	return goalHistory
@@ -175,7 +176,7 @@ function formatHistory(): string {
 /**
  * Check if the last assistant response signals goal completion.
  *
- * Primary signal: the exact marker [GOAL_ACCOMPLISHED] anywhere in the response.
+ * Primary signal: the exact marker "ABCDEFGHIJ" in the last line of the response
  * Secondary signal (fallback): an assertive statement at/near the end of the
  * response like "The goal is accomplished" — NOT preceded by negation
  * (not, never, cannot, etc.) and NOT followed by a question mark.
@@ -206,8 +207,9 @@ function checkGoalAccomplished(ctx: any): boolean {
 
 		if (lastAssistantContent === null) return false;
 
-		// Primary: exact marker
-		if (lastAssistantContent.includes(ACCOMPLISHED_MARKER)) return true;
+		// Require marker in the last line to avoid mid-response false positives
+		const lastLine = lastAssistantContent.split("\n").pop()?.trim() ?? "";
+		if (lastLine.includes(ACCOMPLISHED_MARKER)) return true;
 
 		// Secondary: assertive goal-completion statement near the end of response.
 		// We look at the last 400 chars to avoid matching mid-response musings.
@@ -233,7 +235,7 @@ function updateWidget(ctx: any): void {
 		ctx.ui.setWidget(GOAL_WIDGET_ID, undefined);
 		return;
 	}
-	ctx.ui.setWidget(GOAL_WIDGET_ID, getWidgetLines(), { order: 73 });
+	ctx.ui.setWidget(GOAL_WIDGET_ID, getWidgetComponent(), { order: 73 });
 }
 
 function clearWidget(ctx: any): void {
@@ -261,7 +263,7 @@ export default function (pi: ExtensionAPI) {
 			goal = state;
 			if (ctx.hasUI) {
 				updateWidget(ctx);
-				ctx.ui.notify(` Goal restored: ${truncate(goal.text, 60)}`, "info");
+				ctx.ui.notify(` Goal restored: ${truncate(goal.text, 60)}`, "info");
 			}
 		}
 	});
@@ -276,8 +278,8 @@ export default function (pi: ExtensionAPI) {
 		} else {
 			delete (globalThis as any)[BRIDGE_KEY + "_state"];
 		}
-		// Persist maxTurns config
-		(globalThis as any)[BRIDGE_KEY + "_config"] = maxTurns;
+		// Persist config (maxTurns + maxDurationMs)
+		(globalThis as any)[BRIDGE_KEY + "_config"] = { maxTurns, maxDurationMs };
 	});
 
 	pi.registerCommand("goal", {
@@ -294,7 +296,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				const status = getStatusText();
-				if (ctx.hasUI) ctx.ui.notify(` Goal status`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Goal status`, "info");
 				return { result: status };
 			}
 
@@ -305,7 +307,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				const status = getStatusText();
-				if (ctx.hasUI) ctx.ui.notify(` Goal status`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Goal status`, "info");
 				return { result: status };
 			}
 
@@ -320,7 +322,7 @@ export default function (pi: ExtensionAPI) {
 				readBridge()?.addHistory({ text: clearedText, completedAt: Date.now(), outcome: "cleared", turnsUsed });
 				goal = null;
 				clearWidget(ctx);
-				if (ctx.hasUI) ctx.ui.notify(` Goal cleared: ${truncate(clearedText, 60)} (${turnsUsed} turns)`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Goal cleared: ${truncate(clearedText, 60)} (${turnsUsed} turns)`, "info");
 				delete (globalThis as any)[BRIDGE_KEY + "_state"];
 				return;
 			}
@@ -337,7 +339,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				goal.paused = true;
 				updateWidget(ctx);
-				if (ctx.hasUI) ctx.ui.notify(` Goal paused: ${truncate(goal.text, 60)}`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Goal paused: ${truncate(goal.text, 60)}`, "info");
 				return;
 			}
 
@@ -353,7 +355,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				goal.paused = false;
 				updateWidget(ctx);
-				if (ctx.hasUI) ctx.ui.notify(` Goal resumed: ${truncate(goal.text, 60)}`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Goal resumed: ${truncate(goal.text, 60)}`, "info");
 
 				// Send a continuation to kick things off again
 				await pi.sendUserMessage(
@@ -368,7 +370,7 @@ export default function (pi: ExtensionAPI) {
 				const configArgs = trimmed === "config" ? "" : trimmed.slice("config ".length).trim();
 				if (!configArgs) {
 					// Show current config
-					return { result: `=== Goal Config ===\nmax_turns: ${maxTurns}\n\nUsage: /goal config max_turns <number>` };
+					return { result: `=== Goal Config ===\nmax_turns: ${maxTurns}\nmax_duration: ${formatDuration(maxDurationMs)}\n\nUsage: /goal config max_turns <number> | max_duration <ms>` };
 				}
 
 				// Parse config key=value or key value
@@ -390,14 +392,27 @@ export default function (pi: ExtensionAPI) {
 					const oldMax = maxTurns;
 					maxTurns = num;
 					// Persist immediately
-					(globalThis as any)[BRIDGE_KEY + "_config"] = maxTurns;
-					if (ctx.hasUI) ctx.ui.notify(` max_turns changed: ${oldMax} -> ${maxTurns}`, "info");
+					(globalThis as any)[BRIDGE_KEY + "_config"] = { maxTurns, maxDurationMs };
+					if (ctx.hasUI) ctx.ui.notify(` max_turns changed: ${oldMax} -> ${maxTurns}`, "info");
 					// Refresh widget if active
 					if (goal) updateWidget(ctx);
 					return;
 				}
 
-				ctx.ui.notify(`Unknown config key: ${key}. Available: max_turns`, "warning");
+				if (key === "max_duration" || key === "maxduration") {
+					const num = parseInt(val, 10);
+					if (!Number.isFinite(num) || num < 60_000 || num > 86_400_000) {
+						ctx.ui.notify("max_duration must be between 60000ms (1min) and 86400000ms (24h).", "warning");
+						return;
+					}
+					maxDurationMs = num;
+					// Persist immediately
+					(globalThis as any)[BRIDGE_KEY + "_config"] = { maxTurns, maxDurationMs };
+					if (ctx.hasUI) ctx.ui.notify(`max_duration changed: ${formatDuration(num)}`, "info");
+					return;
+				}
+
+				ctx.ui.notify(`Unknown config key: ${key}. Available: max_turns, max_duration`, "warning");
 				return;
 			}
 
@@ -422,7 +437,7 @@ export default function (pi: ExtensionAPI) {
 				const previousText = goal.text;
 				const previousTurns = goal.turns;
 				readBridge()?.addHistory({ text: previousText, completedAt: Date.now(), outcome: "cancelled", turnsUsed: previousTurns });
-				if (ctx.hasUI) ctx.ui.notify(` Replacing previous goal: ${truncate(previousText, 60)}`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Replacing previous goal: ${truncate(previousText, 60)}`, "info");
 			}
 
 			goal = {
@@ -438,12 +453,13 @@ export default function (pi: ExtensionAPI) {
 			(globalThis as any)[BRIDGE_KEY + "_state"] = goal;
 
 			updateWidget(ctx);
-			if (ctx.hasUI) ctx.ui.notify(` Goal set: ${truncate(rawGoal, 80)}`, "info");
+			if (ctx.hasUI) ctx.ui.notify(` Goal set: ${truncate(rawGoal, 80)}`, "info");
 
 			await pi.sendUserMessage(
 				`I have set a goal for you to accomplish. Your goal is:\n\n${rawGoal}\n\n` +
 					`Work toward this goal step by step. When you have fully accomplished it, ` +
 					`respond with exactly ${ACCOMPLISHED_MARKER} at the end of your response. ` +
+					`IMPORTANT: Only use this marker when there is an active goal. Do NOT use it in regular conversations.\n` +
 					`Do NOT stop until the goal is complete. Take whatever actions are needed.`,
 				{ deliverAs: "nextTurn" },
 			);
@@ -457,7 +473,30 @@ export default function (pi: ExtensionAPI) {
 
 		goal.locked = true;
 
+		const lockWatchdog = setTimeout(() => {
+			if (goal?.locked) {
+				goal.locked = false;
+			}
+		}, 300_000); // 5 minutes
+
 		try {
+			// Wall-clock timeout check
+			const elapsed = Date.now() - goal.startedAt;
+			if (elapsed > maxDurationMs) {
+				const timedOutText = goal.text;
+				const turnsUsed = goal.turns;
+				readBridge()?.addHistory({ text: timedOutText, completedAt: Date.now(), outcome: "max-turns", turnsUsed });
+				goal = null;
+				clearWidget(ctx);
+				delete (globalThis as any)[BRIDGE_KEY + "_state"];
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						`Goal stopped after ${formatDuration(elapsed)} (time limit): ${truncate(timedOutText, 60)}`,
+						"warning",
+					);
+				return;
+			}
+
 			// Check if the goal was accomplished
 			if (checkGoalAccomplished(ctx)) {
 				const doneText = goal.text;
@@ -466,7 +505,7 @@ export default function (pi: ExtensionAPI) {
 				goal = null;
 				clearWidget(ctx);
 				delete (globalThis as any)[BRIDGE_KEY + "_state"];
-				if (ctx.hasUI) ctx.ui.notify(` Goal accomplished: ${truncate(doneText, 60)} (${turnsUsed} turns)`, "info");
+				if (ctx.hasUI) ctx.ui.notify(` Goal accomplished: ${truncate(doneText, 60)} (${turnsUsed} turns)`, "info");
 				return;
 			}
 
@@ -481,7 +520,7 @@ export default function (pi: ExtensionAPI) {
 				delete (globalThis as any)[BRIDGE_KEY + "_state"];
 				if (ctx.hasUI)
 					ctx.ui.notify(
-						` Goal stopped after ${maxTurns} turns: ${truncate(maxedText, 60)}`,
+						` Goal stopped after ${maxTurns} turns: ${truncate(maxedText, 60)}`,
 						"warning",
 					);
 				return;
@@ -497,7 +536,8 @@ export default function (pi: ExtensionAPI) {
 				{ deliverAs: "followUp" },
 			);
 		} finally {
-			goal.locked = false;
+			clearTimeout(lockWatchdog);
+			if (goal) goal.locked = false;
 		}
 	});
 }

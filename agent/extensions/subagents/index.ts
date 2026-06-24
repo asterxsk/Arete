@@ -43,17 +43,21 @@ class CompactToolBox implements Component {
 		const durStr = duration !== undefined ? ` [${formatDuration(duration)}]` : "";
 		let header = ` ${star} \x1b[38;2;255;165;0m${toolName}\x1b[0m${durStr}`;
 		if (suffix) header += ` ${suffix}`;
+		// Add blank line above to separate from spinner
+		lines.push("");
 		lines.push(truncateToWidth(header, width));
 		if (expanded) {
-			if (argsLine) lines.push(truncateToWidth(`  │ ${argsLine}`, width));
-			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${pl}`, width));
-			if (footer) lines.push(truncateToWidth(`  └ ${footer}`, width));
+			if (argsLine) lines.push(truncateToWidth(`    ${argsLine}`, width));
+			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`    ${pl}`, width));
+			if (footer) lines.push(truncateToWidth(`    ${footer}`, width));
 		} else {
 			// Single-line compact mode
 			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
 			header += ` ${parts.join(" ")}`;
-			lines[0] = truncateToWidth(header, width);
+			lines[1] = truncateToWidth(header, width);
 		}
+		// Add blank line below to separate from spinner
+		lines.push("");
 		this.cachedWidth = width;
 		this.cachedLines = lines;
 		return lines;
@@ -870,9 +874,9 @@ export default function (pi: ExtensionAPI) {
 			"The model for subagents is set via the /sub command — the agent cannot override it.",
 		promptSnippet: "Run subagents for delegated tasks",
 		promptGuidelines: [
+			"When you have 2+ independent subagent tasks, ALWAYS use parallel mode with a SINGLE subagent call (tasks: [...]), never multiple separate subagent calls. Multiple separate tool calls creates massive UI clutter.",
 			"Parallel tool calls are your primary parallelism mechanism — put multiple independent read/fetch/search calls in one function_calls block. Don't use subagents to parallelize simple I/O.",
 			"Use subagent to delegate *reasoning and decisions*: codebase exploration (scout), web research (researcher), or isolated code changes (worker)",
-			"For multiple independent subagent tasks, use parallel mode with tasks[] array",
 			"Subagents have NO context from the current conversation — include ALL necessary context in the task description",
 			"The model for subagents is set via the /sub command and cannot be overridden in the tool call.",
 		],
@@ -896,6 +900,8 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			(globalThis as any).__pi_subagent_running_count = ((globalThis as any).__pi_subagent_running_count ?? 0) + 1;
+			try {
 			const cwd = ctx.cwd;
 			const parentModel = ctx.model ? `${(ctx.model as any).provider}/${ctx.model.id}` : undefined;
 			const resolvedModel = resolveSubagentModel(parentModel);
@@ -998,6 +1004,9 @@ export default function (pi: ExtensionAPI) {
 			} else {
 				throw new Error("Provide either (agent + task) for single mode, or tasks[] for parallel mode.");
 			}
+			} finally {
+				(globalThis as any).__pi_subagent_running_count = Math.max(0, ((globalThis as any).__pi_subagent_running_count ?? 1) - 1);
+			}
 		},
 
 		renderShell: "self",
@@ -1030,8 +1039,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			return new CompactToolBox({
-				toolName: agentName,
-				argsLine: statusText,
+				toolName: "subagent",
+				argsLine: `${agentName}: ${statusText}`,
 				state: "pending",
 			});
 		}
@@ -1116,8 +1125,8 @@ export default function (pi: ExtensionAPI) {
 					previewLines = lines.slice(0, 5).map((l) => l.length > 120 ? l.slice(0, 117) + "..." : l);
 				}
 				return new CompactToolBox({
-					toolName: r.agent,
-					argsLine: taskPreview,
+					toolName: "subagent",
+					argsLine: `${r.agent}: ${taskPreview}`,
 					state,
 					duration: r.progress?.durationMs || 0,
 					previewLines,
@@ -1141,7 +1150,7 @@ export default function (pi: ExtensionAPI) {
 		return {
 			systemPrompt:
 				_event.systemPrompt +
-				`\n\n## Available Subagents\nUse the \`subagent\` tool to delegate tasks to these specialized agents:\n${list}\n\nSubagents run with the model set via the \`/sub\` command (current: ${subagentModel}). Agents cannot specify their own model.`,
+				`\n\n## Available Subagents\nUse the \`subagent\` tool to delegate tasks to these specialized agents:\n${list}\n\nSubagents run with the model set via the \`/sub\` command (current: ${subagentModel}). Agents cannot specify their own model.\n\nIMPORTANT: For multiple independent tasks, always use a SINGLE subagent call with tasks:[] (parallel mode), never multiple separate subagent calls.`,
 		};
 	});
 }

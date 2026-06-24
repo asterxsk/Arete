@@ -29,7 +29,7 @@ sent with progress context.
 1. You set a goal with `/goal <describe the goal>`.
 2. The agent receives your goal and starts working toward it.
 3. After each response, the extension checks if the response contains
-   `[GOAL_ACCOMPLISHED]`. It also checks for natural language signals
+   `✻ Accomplished!`. It also checks for natural language signals
    like "goal accomplished", "goal complete", "goal achieved".
 4. If not complete, a continuation message is sent as a follow-up,
    including progress context (turn count, elapsed time, progress bar).
@@ -54,7 +54,7 @@ When a goal is active, a status widget shows up in the sidebar:
 - **Goal history**: Last 50 goals tracked in-memory
 - **Session persistence**: Goal state survives session compacts via
   `globalThis` bridge (does not survive a full process restart)
-- **Smart completion detection**: Checks for the `[GOAL_ACCOMPLISHED]`
+- **Smart completion detection**: Checks for the `✻ Accomplished!`
   marker, and also looks for natural-language phrases like "goal
   accomplished", "task complete", "mission achieved", etc. near the
   end of the response
