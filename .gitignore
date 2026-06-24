@@ -6,9 +6,8 @@
 !README*
 !LICENSE
 
-# In the agent folder, ignore everything
+# In the agent folder, ignore everything except keybinds.json and extensions
 agent/*
-# But not these specific files/folders in agent
 !agent/keybinds.json
 !agent/extensions/
 
