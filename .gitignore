@@ -1,35 +1,27 @@
 # Ignore everything by default
 *
-!.pi/
 
-# But not these files in the root
+# Un-ignore specific root files
 !.gitignore
 !README*
 !LICENSE
 
-# In the agent folder, ignore everything except keybinds.json and extensions
-agent/*
-!agent/keybinds.json
+# Un-ignore agent folder
+!agent/
+
+# Un-ignore specific files and folders inside agent/
+!agent/keybindings.json
 !agent/extensions/
+!agent/themes/
 
-# Track .pi/agent/keybinds.json
-.pi/agent/*
-!.pi/agent/keybinds.json
+# Un-ignore everything recursively inside extensions and themes
+!agent/extensions/**
+!agent/themes/**
 
-# Specific directories to ignore regardless of above
-pi-acp/
-agent/pi-hermes-memory/
-agent/projects-memory/
-agent/sessions/
-agent/docs/
-agent/skills/
-agent/npm/
-agent/bin/
-.commandcode/
-agent/auth.json
-agent/trust.json
-agent/models.json
-agent/settings.json
-web-search.json
-nul
-*.exe
+# Re-ignore specific things inside extensions
+agent/extensions/commandcode-provider/
+agent/extensions/**/docs/
+agent/extensions/**/doc/
+
+# Explicitly ignore crash log (though * already ignores it, being explicit)
+agent/pi-crash.log
