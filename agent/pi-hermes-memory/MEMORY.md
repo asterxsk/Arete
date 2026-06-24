@@ -7,7 +7,3 @@ The user has a plan extension at ~/.pi/agent/extensions/plan/index.ts — it blo
 Pi extension `@juicesharp/rpiv-todo` depends on `@juicesharp/rpiv-config` for config utilities (configPath, loadJsonConfig, validateGuidanceFields, GuidanceFields type). When cloning to local extensions, this dependency must either be installed via npm or the 4 small utilities inlined. The config utilities only use node:fs, node:os, node:path — simple to inline for a standalone extension. <!-- created=2026-06-23, last=2026-06-23 -->
 §
 Custom tools registered via registerTool() can have renderCall and renderResult functions to control TUI display. renderCall can show a styled header (e.g., "pwsh command..."), renderResult can dim output lines and add a timing footer (e.g., "Took 0.2s"). This mirrors how built-in tools like bash display. <!-- created=2026-06-23, last=2026-06-23 -->
-§
-The tool_result event in pi extensions can intercept and modify tool output content before it reaches the LLM. This is useful for truncation, reformatting, or filtering output from specific tools. Check event.toolName to target specific tools. <!-- created=2026-06-23, last=2026-06-23 -->
-§
-The subagents extension's model picker only shows models from settings.json and models.json files by default. To show all available models including built-in providers, you need to query the model registry from extension context. <!-- created=2026-06-23, last=2026-06-23 -->

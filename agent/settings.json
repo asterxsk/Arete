@@ -1,17 +1,17 @@
 {
-  "defaultModel": "xiaomi/mimo-v2.5",
-  "defaultProvider": "commandcode",
+  "defaultModel": "auto",
+  "defaultProvider": "freerouter",
   "retry": {
     "provider": {
       "timeoutMs": 600000
     }
   },
-  "lastChangelogVersion": "0.80.1",
+  "lastChangelogVersion": "0.80.2",
   "packages": [
     "npm:pi-web-access",
     "npm:pi-hermes-memory"
   ],
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "quietStartup": true,
   "doubleEscapeAction": "tree",
   "theme": "arete",

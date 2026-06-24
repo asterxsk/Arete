@@ -1,10 +1,14 @@
 # === Sensitive Data ===
 # Contains OAuth tokens and private credentials
 agent/auth.json
+pi-acp/
 # Contains provider configurations and potentially API keys
 agent/models.json
 agent/settings.json
 agent/npm
+agent/trust.json
+agent/pi-hermes-memory/
+agent/projects-memory/
 
 # === Personal Data & History ===
 # Project-specific interaction history

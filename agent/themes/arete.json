@@ -13,6 +13,7 @@
     "bgCyan":    "#1a2030",
     "bgWarm":    "#1a2030",
     "bgPink":    "#1a2030",
+    "userMsgBg": "#373737",
     "fg":        "#ffffff",
     "fgSoft":    "#cccccc",
     "grey":     "#707080",
@@ -25,10 +26,14 @@
     "orange":   "#f0a050",
     "purple":   "#bb88dd",
     "pink":     "#ff88c8",
-    "darkGrey": "#1e1e24"
+    "darkGrey": "#1e1e24",
+    "thinkOff": "#474647",
+    "thinkMed": "#b2b2b2",
+    "thinkHigh": "#efe0f9",
+    "thinkMax": "#a933f7"
   },
   "colors": {
-    "accent": "darkBlue",
+    "accent": "orange",
     "border": "lightBlue",
     "borderAccent": "blue",
     "borderMuted": "surface",
@@ -40,7 +45,7 @@
     "text": "fg",
     "thinkingText": "grey",
     "selectedBg": "bgSky",
-    "userMessageBg": "bgDeep",
+    "userMessageBg": "userMsgBg",
     "userMessageText": "fg",
     "customMessageBg": "bgSky",
     "customMessageText": "fg",
@@ -72,12 +77,12 @@
     "syntaxType": "grey",
     "syntaxOperator": "blue",
     "syntaxPunctuation": "fgSoft",
-    "thinkingOff": "orange",
-    "thinkingMinimal": "grey",
-    "thinkingLow": "grey",
-    "thinkingMedium": "fg",
-    "thinkingHigh": "purple",
-    "thinkingXhigh": "pink",
+    "thinkingOff": "thinkOff",
+    "thinkingMinimal": "thinkOff",
+    "thinkingLow": "thinkOff",
+    "thinkingMedium": "thinkMed",
+    "thinkingHigh": "thinkHigh",
+    "thinkingXhigh": "thinkMax",
     "bashMode": "green"
   }
 }

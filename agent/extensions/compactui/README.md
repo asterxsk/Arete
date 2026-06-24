@@ -8,6 +8,7 @@ Replaces the default tool output UI with a compact, minimal rendering style. Eac
 
 ## Features
 
+- **Global flag** — Sets `__pi_betterui_enabled` on `globalThis` to enable compact UI in other extensions (web search, tasks, timers, questions)
 - **Compact call display** — Single-line tool calls with orange tool names and dim hints
 - **Args truncation** — Tool arguments are truncated to 50 characters in collapsed headers (e.g. `bash [git log --oneline --graph --decorate --all...]`)
 - **Expandable results** — Press `ctrl+o` to toggle expanded/collapsed view with pipe-framed output
@@ -29,6 +30,17 @@ This extension overrides rendering for all 7 built-in tools:
 | `ls` | List directory contents |
 | `grep` | Search for patterns in files |
 | `find` | Find files by name/pattern |
+
+## Extensions Enabled
+
+Setting `__pi_betterui_enabled` enables compact UI in these extensions:
+
+| Extension | Tool |
+|-----------|------|
+| `pi-web-access` | `web_search` |
+| `questions` | `questions` |
+| `tasks` | `tasks` |
+| `timers` | `timers` |
 
 ## How to Remove
 

@@ -37,21 +37,35 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 	const show = lines.slice(0, limit);
 	const hasMore = lines.length > limit;
 	const raw: string[] = [];
+
+	// Header line
 	raw.push(INDENT + orange(theme, headerName) + "[" + argsLine + "]");
+
+	// Output lines with │ prefix aligned under [
 	const CONTENT_INDENT = "    │ ";
-	for (const l of show) {
-		raw.push(INDENT + CONTENT_INDENT + theme.fg("text", l));
+	for (const line of show) {
+		raw.push(INDENT + CONTENT_INDENT + theme.fg("text", line));
 	}
+
 	if (hasMore) {
-		const hidden = lines.length - limit;
-		raw.push(INDENT + CONTENT_INDENT + theme.fg("dim", `... (${hidden} more lines, ${lines.length} total, `) + theme.fg("muted", "ctrl+o") + theme.fg("dim", " to expand)") );
+		raw.push(INDENT + CONTENT_INDENT + theme.fg("dim", "... " + (lines.length - limit) + " more"));
 	}
+
+	// Footer with duration
 	if (durationS >= 0) {
-		const FOOTER_INDENT = "    └ ";
-		raw.push(INDENT + FOOTER_INDENT + theme.fg("dim", "Duration: " + formatDur(durationS)));
+		raw.push(INDENT + "    └ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
 	}
+
 	return {
-		render(width: number) { return raw.map((l) => visibleWidth(l) <= width ? l : truncateToWidth(l, width, "...")); },
+		render(width) {
+			const result: string[] = [];
+			for (const rl of raw) {
+				if (!rl) result.push("");
+				else if (visibleWidth(rl) <= width) result.push(rl);
+				else result.push(truncateToWidth(rl, width, "..."));
+			}
+			return result;
+		},
 		invalidate() {},
 	};
 }
@@ -61,6 +75,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "powershell",
 		label: "PowerShell",
+		renderShell: "self",
 		description:
 			"Execute PowerShell commands on the local Windows system. Supports any cmdlet, script, or PowerShell command. " +
 			"Results include stdout, stderr, and exit code.",

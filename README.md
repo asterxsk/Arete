@@ -15,6 +15,67 @@ git clone <your-repo-url> ~/.pi/agent
 
 > Make sure `~/.pi/agent` is the target — the extensions live inside `agent/extensions/`.
 
+### External Packages
+You can also enhance Pi Agent by installing external packages:
+```bash
+pi install npm:pi-web-access
+pi install npm:pi-hermes-memory
+```
+
+### Recommended Skills
+You can install these recommended skills to further expand the agent's capabilities:
+```bash
+npx skills add browser-use/browser-harness
+npx skills add https://github.com/juliusbrussee/caveman --skill caveman
+npx skills add https://github.com/mattpocock/skills --skill grill-me
+npx skills add https://github.com/nutlope/hallmark --skill hallmark
+npx skills add obra/superpowers
+```
+
+## Quickstart
+
+Add the following to your `settings.json` (located at `~/.pi/settings.json`):
+
+```json
+{
+  "defaultModel": "xiaomi/mimo-v2.5",
+  "defaultProvider": "commandcode",
+  "retry": {
+    "provider": {
+      "timeoutMs": 600000
+    }
+  },
+  "lastChangelogVersion": "0.80.2",
+  "packages": [
+    "npm:pi-web-access",
+    "npm:pi-hermes-memory"
+  ],
+  "hideThinkingBlock": false,
+  "quietStartup": true,
+  "doubleEscapeAction": "tree",
+  "theme": "arete",
+  "defaultThinkingLevel": "medium",
+  "collapseChangelog": true,
+  "followUpMode": "one-at-a-time",
+  "themes": [
+    "themes"
+  ],
+  "extensions": [
+    "extensions/"
+  ],
+  "editorPaddingX": 1,
+  "treeFilterMode": "no-tools",
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "compaction": {
+    "enabled": true
+  },
+  "enableSkillCommands": true,
+  "defaultProjectTrust": "always"
+}
+```
+
 ## Extensions
 
 ### UI & Presentation
@@ -49,23 +110,6 @@ git clone <your-repo-url> ~/.pi/agent
 
 ### Reference (Disabled)
 * **tmp/** (`tmp/`): Contains old design references (`*.reference.ts`). The `.reference.ts` suffix prevents Pi from loading these files. Do not import from them in production extensions.
-
-### External Packages
-You can also enhance Pi Agent by installing external packages:
-```bash
-pi install git:github.com/DietrichGebert/ponytail
-pi install npm:pi-web-access
-```
-
-### Recommended Skills
-You can install these recommended skills to further expand the agent's capabilities:
-```bash
-npx skills add browser-use/browser-harness
-npx skills add https://github.com/juliusbrussee/caveman --skill caveman
-npx skills add https://github.com/mattpocock/skills --skill grill-me
-npx skills add https://github.com/nutlope/hallmark --skill hallmark
-npx skills add obra/superpowers
-```
 
 ---
 

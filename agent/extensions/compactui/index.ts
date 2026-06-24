@@ -28,13 +28,16 @@ const INDENT = " ";
 const HINT = " (ctrl+o to expand)";
 const MAX_LINES = 5;
 const TRUNCATED_TOOLS = new Set(["bash", "powershell", "run_command"]);
+const HERMES_TOOLS = new Set(["memory", "skill_manage", "session_search", "memory_search"]);
+const HERMES_MAX_LINES = 8;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function line(text: string): Component {
   return {
     render(width) {
-      return [visibleWidth(text) <= width ? text : truncateToWidth(text, width, "...")];
+      // Always truncate to width to prevent overflow
+      return [truncateToWidth(text, width, "...")];
     },
     invalidate() {},
   };
@@ -46,7 +49,9 @@ function orange(theme: any, text: string): string {
 
 function compactCall(toolName: string, argsStr: string, theme: any): Component {
   let display = argsStr.split("\n")[0] ?? argsStr;
-  if (display.length > 50) display = display.slice(0, 47) + "...";
+  // Truncate by visible length to avoid ANSI code interference
+  const maxDisplay = 40;
+  if (display.length > maxDisplay) display = display.slice(0, maxDisplay - 3) + "...";
   else if (display.length < argsStr.length) display += "...";
   return line(INDENT + orange(theme, toolName) + " [" + display + "]" + theme.fg("dim", HINT));
 }
@@ -156,6 +161,9 @@ function captureResult(result: any, durationMs?: number): any {
 const KNOWN_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "grep", "find"]);
 
 export default function (pi: ExtensionAPI) {
+  // Enable compact UI for web search and other extensions that check this flag
+  (globalThis as any).__pi_betterui_enabled = true;
+
   const cwd = process.cwd();
   const unknownTools = new Set<string>();
 
@@ -165,6 +173,30 @@ export default function (pi: ExtensionAPI) {
       unknownTools.add(event.toolName);
     }
   });
+
+  // ── Strip emojis + truncate hermes-memory tools ──────────────────────
+  function stripEmojis(text: string): string {
+    return text
+      .replace(/[\u{1F600}-\u{1F64F}]/gu, "")
+      .replace(/[\u{1F300}-\u{1F5FF}]/gu, "")
+      .replace(/[\u{1F680}-\u{1F6FF}]/gu, "")
+      .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, "")
+      .replace(/[\u{1F900}-\u{1F9FF}]/gu, "")
+      .replace(/[\u{1FA00}-\u{1FAFF}]/gu, "")
+      .replace(/[\u{2600}-\u{26FF}]/gu, "")
+      .replace(/[\u{2700}-\u{27BF}]/gu, "")
+      .replace(/[\u{2190}-\u{21FF}]/gu, "")
+      .replace(/[\u{2300}-\u{23FF}]/gu, "")
+      .replace(/[\u{2500}-\u{257F}]/gu, "")
+      .replace(/[\u{2580}-\u{259F}]/gu, "")
+      .replace(/[\u{25A0}-\u{25FF}]/gu, "")
+      .replace(/[\u{FE00}-\u{FE0F}]/gu, "")
+      .replace(/[\u{200D}]/gu, "")
+      .replace(/[\u{20E3}]/gu, "")
+      .replace(/[\u{E0020}-\u{E007F}]/gu, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
 
   // ── Truncate tool output + format unknown tool errors ───────────────
   pi.on("tool_result", async (event) => {
@@ -180,6 +212,28 @@ export default function (pi: ExtensionAPI) {
         details: { _fullOutput: formatted, _isUnknownTool: true },
         isError: true,
       };
+    }
+
+    // Hermes-memory tools: strip emojis + truncate
+    if (HERMES_TOOLS.has(event.toolName)) {
+      const fullText = content
+        .filter((p): p is { type: "text"; text: string } => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text)
+        .join("\n");
+
+      let modified = false;
+      const newContent = content.map((part) => {
+        if (part.type !== "text" || !part.text) return part;
+        let text = stripEmojis(part.text);
+        const lines = text.split("\n");
+        if (lines.length > HERMES_MAX_LINES) {
+          const hidden = lines.length - HERMES_MAX_LINES;
+          text = lines.slice(0, HERMES_MAX_LINES).join("\n") + `\n... (${hidden} more lines, ${lines.length} total)`;
+        }
+        if (text !== part.text) { modified = true; return { ...part, text }; }
+        return part;
+      });
+      return { content: modified ? newContent : undefined, details: { ...event.details, _fullOutput: fullText } };
     }
 
     if (!TRUNCATED_TOOLS.has(event.toolName)) return;
@@ -251,9 +305,14 @@ export default function (pi: ExtensionAPI) {
       if (context.expanded) return line("");
       return compactCall("write", args.path ?? "?", theme);
     },
-    renderResult(result, { isPartial }, theme, context) {
-      if (isPartial) return line(INDENT + theme.fg("warning", "Writing..."));
-      return line("");
+    renderResult(result, { expanded }, theme, context) {
+      if (!expanded) return line("");
+      const details = result.details as Record<string, unknown> | undefined;
+      const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
+      const lines = full.split("\n");
+      const durationS = (details?._durationS as number) ?? -1;
+      const filePath = context.args.path ?? "?";
+      return expandedBox(theme, "write", filePath, lines, durationS, 40);
     },
   });
 
