@@ -16,6 +16,13 @@ function compactLine(text: string): Component {
 	};
 }
 
+function noOp(): Component {
+	return {
+		render() { return []; },
+		invalidate() {},
+	};
+}
+
 function orange(theme: any, text: string): string {
 	return `\x1b[38;2;250;179;135m${text}\x1b[39m`;
 }
@@ -143,7 +150,7 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme, context) {
-			if (context.expanded) return compactLine("");
+			if (context.expanded) return noOp();
 			return compactCall("pwsh", args.command ?? "?", theme);
 		},
 
@@ -152,7 +159,7 @@ export default function (pi: ExtensionAPI) {
 
 			const details = result.details as Record<string, unknown> | undefined;
 			const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
-			if (!expanded) return compactLine("");
+			if (!expanded) return noOp();
 			const lines = full.split("\n");
 			const durationS = (details?._durationS as number) ?? -1;
 			return expandedBox(theme, "pwsh", _context.args.command || "", lines, durationS, 50);

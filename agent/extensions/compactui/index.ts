@@ -13,6 +13,7 @@
 import type { ExtensionAPI, EditToolDetails } from "@earendil-works/pi-coding-agent";
 import {
   AssistantMessageComponent,
+  UserMessageComponent,
   createBashTool,
   createEditTool,
   createFindTool,
@@ -172,10 +173,11 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
   const raw: string[] = [];
 
   // Header line
-  raw.push(INDENT + orange(theme, headerName) + "[" + argsLine + "]");
+  raw.push(INDENT + orange(theme, headerName) + " [" + argsLine + "]");
 
   // Output lines with │ prefix aligned under [
-  const CONTENT_INDENT = "    │ ";
+  const padding = " ".repeat(headerName.length + 1);
+  const CONTENT_INDENT = padding + "│ ";
   for (const line of show) {
     raw.push(INDENT + CONTENT_INDENT + theme.fg("text", line));
   }
@@ -186,7 +188,7 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 
   // Footer with duration
   if (durationS >= 0) {
-    raw.push(INDENT + "    └ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+    raw.push(INDENT + padding + "└ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
   }
 
   return {
@@ -219,10 +221,11 @@ function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines
   const raw: string[] = [];
 
   // Header line
-  raw.push(INDENT + orange(theme, headerName) + "[" + argsLine + "]");
+  raw.push(INDENT + orange(theme, headerName) + " [" + argsLine + "]");
 
   // Diff lines with │ prefix, colored by +/-
-  const CONTENT_INDENT = "    │ ";
+  const padding = " ".repeat(headerName.length + 1);
+  const CONTENT_INDENT = padding + "│ ";
   for (const dl of show) {
     raw.push(INDENT + CONTENT_INDENT + colorizeDiffLine(theme, dl));
   }
@@ -233,7 +236,7 @@ function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines
 
   // Footer with duration
   if (durationS >= 0) {
-    raw.push(INDENT + "    └ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+    raw.push(INDENT + padding + "└ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
   }
 
   return {
@@ -260,13 +263,41 @@ function captureResult(result: any, durationMs?: number): any {
   return { ...result, details };
 }
 
-// ── Extension entry ────────────────────────────────────────────────────
-
-const KNOWN_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "grep", "find"]);
+// ── Main Extension ───────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-  // Enable compact UI for web search and other extensions that check this flag
+  // Flag so other extensions (like tasks) know we are active
   (globalThis as any).__pi_betterui_enabled = true;
+
+  // Intercept all tool registrations to compactify 'run_command' and 'manage_task' which are defined in the tasks extension
+  const origRegister = pi.registerTool.bind(pi);
+  pi.registerTool = (tool: any) => {
+    if (tool.name === "run_command" || tool.name === "manage_task") {
+      tool.renderCall = (args: any, theme: any, context: any) => {
+        if (context.expanded) return line("");
+        let argsLine = "??";
+        if (tool.name === "run_command") argsLine = args.CommandLine as string || "?";
+        else if (tool.name === "manage_task") argsLine = `${args.Action} ${args.TaskId || ""}`.trim();
+        return compactCall(tool.name, argsLine, theme);
+      };
+      
+      tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
+        if (!opts.expanded) return noOp();
+        
+        let argsLine = "??";
+        if (tool.name === "run_command") argsLine = context.args.CommandLine as string || "?";
+        else if (tool.name === "manage_task") argsLine = `${context.args.Action} ${context.args.TaskId || ""}`.trim();
+        
+        const content = result.content?.[0];
+        const text = content?.type === "text" ? content.text : "";
+        const lines = text.split("\n").filter((l: string) => l.trim());
+        const durationS = (result.details as any)?._durationS ?? 0.0;
+        
+        return expandedBox(theme, tool.name, argsLine, lines, durationS, 50);
+      };
+    }
+    origRegister(tool);
+  };
 
   if (!patchedAssistant) {
     try {
@@ -319,9 +350,10 @@ export default function (pi: ExtensionAPI) {
                 }
             }
         };
-        patchedAssistant = true;
+        
+		patchedAssistant = true;
     } catch (e) {
-        console.error("Failed to patch AssistantMessageComponent for thinking-ui in compactui extension:", e);
+        console.error("Failed to patch UI components in compactui extension:", e);
     }
   }
 
