@@ -11,6 +11,10 @@ agent/*
 !agent/keybinds.json
 !agent/extensions/
 
+# Track .pi/agent/keybinds.json
+.pi/agent/*
+!.pi/agent/keybinds.json
+
 # Specific directories to ignore regardless of above
 pi-acp/
 agent/pi-hermes-memory/
