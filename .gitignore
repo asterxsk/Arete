@@ -3,7 +3,7 @@
 
 # Un-ignore specific root files
 !.gitignore
-!README*
+!AGENTS.md
 !LICENSE
 
 # Un-ignore agent folder
