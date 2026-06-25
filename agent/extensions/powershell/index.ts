@@ -46,7 +46,7 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 	const raw: string[] = [];
 
 	// Header line
-	raw.push(INDENT + orange(theme, headerName) + "[" + argsLine + "]");
+	raw.push(INDENT + orange(theme, headerName) + " [" + argsLine + "]");
 
 	// Output lines with │ prefix aligned under [
 	const CONTENT_INDENT = "    │ ";

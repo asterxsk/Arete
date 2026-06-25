@@ -58,7 +58,8 @@ interface QuestionInput {
 	label?: string;
 	prompt: string;
 	sketch?: string;
-	options: QuestionOptionInput[];
+	options?: QuestionOptionInput[];
+	isMultiSelect?: boolean;
 }
 
 interface QuestionOption {
@@ -73,6 +74,7 @@ interface Question {
 	prompt: string;
 	sketch?: string;
 	options: QuestionOption[];
+	isMultiSelect?: boolean;
 }
 
 type AnswerSource = "option" | "custom";
@@ -111,11 +113,11 @@ const QuestionSchema = Type.Object({
 	sketch: Type.Optional(
 		Type.String({ description: "Optional ASCII sketch, diagram, or wireframe to help answer the question. Do not use it to restate answer options or render them in square brackets." }),
 	),
-	options: Type.Array(QuestionOptionSchema, {
-		minItems: 1,
+	options: Type.Optional(Type.Array(QuestionOptionSchema, {
 		maxItems: 10,
-		description: "1-10 preset options. The UI appends 'Type your own answer' as last option.",
-	}),
+		description: "Up to 10 preset options. Omit for open-ended questions. The UI appends 'Type your own answer' as last option.",
+	})),
+	isMultiSelect: Type.Optional(Type.Boolean({ description: "If true, allows multiple answers to be selected via checkboxes." })),
 });
 
 const QuestionsParams = Type.Object({
@@ -140,11 +142,12 @@ function buildQuestions(questions: QuestionInput[]): Question[] {
 		label: normalizeLabel(q.label, q.prompt || `Q${index + 1}`),
 		prompt: q.prompt,
 		sketch: q.sketch?.trim() ? q.sketch : undefined,
-		options: q.options.map((opt) => ({
+		options: (q.options || []).map((opt) => ({
 			value: opt.value,
 			label: opt.label,
 			description: opt.description,
 		})),
+		isMultiSelect: q.isMultiSelect,
 	}));
 }
 
@@ -175,8 +178,8 @@ class QuestionsComponent {
 
 	private readonly questions: Question[];
 	private readonly input: Input;
-	private readonly answerIndex = new Map<string, number>();
-	private readonly answerValue = new Map<string, Answer>();
+	private readonly answerIndex = new Map<string, Set<number>>();
+	private readonly answerValue = new Map<string, Answer[]>();
 	private readonly totalTabs: number;
 	private tabIndex = 0;
 	private optionIndex = 0;
@@ -208,7 +211,9 @@ class QuestionsComponent {
 			this.mode = "browse";
 			this.input.setValue("");
 			this.syncFocus();
-			this.advanceAfterAnswer();
+			if (!question.isMultiSelect) {
+				this.advanceAfterAnswer();
+			}
 			this.tui.requestRender();
 		};
 		this.input.onEscape = () => {
@@ -234,17 +239,24 @@ class QuestionsComponent {
 		return this.questions.length > 1;
 	}
 
-	private currentOptions(): Array<QuestionOption & { isCustom?: boolean }> {
+	private currentOptions(): Array<QuestionOption & { isCustom?: boolean, isDone?: boolean }> {
 		const question = this.currentQuestion();
 		if (!question) return [];
-		return [
+		const opts: Array<QuestionOption & { isCustom?: boolean, isDone?: boolean }> = [
 			...question.options,
 			{ value: "__pi_custom_answer__", label: "Type your own answer", isCustom: true },
 		];
+		if (question.isMultiSelect) {
+			opts.push({ value: "__pi_done__", label: "Done", isDone: true });
+		}
+		return opts;
 	}
 
 	private allAnswered(): boolean {
-		return this.questions.every((question) => this.answerValue.has(question.id));
+		return this.questions.every((question) => {
+			const values = this.answerValue.get(question.id);
+			return values && values.length > 0;
+		});
 	}
 
 	private syncFocus(): void {
@@ -264,10 +276,10 @@ class QuestionsComponent {
 		}
 		const question = this.currentQuestion();
 		if (!question) return;
-		const savedIndex = this.answerIndex.get(question.id);
-		this.optionIndex = typeof savedIndex === "number" ? savedIndex : 0;
-		const savedAnswer = this.answerValue.get(question.id);
-		if (savedAnswer?.source === "custom") {
+		const savedIndices = this.answerIndex.get(question.id);
+		this.optionIndex = savedIndices && savedIndices.size > 0 ? Array.from(savedIndices)[0] : 0;
+		const savedAnswers = this.answerValue.get(question.id);
+		if (savedAnswers?.some(a => a.source === "custom")) {
 			this.optionIndex = question.options.length;
 		}
 		this.mode = "browse";
@@ -275,9 +287,10 @@ class QuestionsComponent {
 		this.invalidate();
 	}
 
-	private saveOptionAnswer(question: Question, index: number): void {
+	private toggleOptionAnswer(question: Question, index: number): void {
 		const option = this.currentOptions()[index];
-		if (!option || option.isCustom) return;
+		if (!option || option.isCustom || option.isDone) return;
+		
 		const answer: Answer = {
 			questionId: question.id,
 			questionLabel: question.label,
@@ -287,8 +300,31 @@ class QuestionsComponent {
 			optionIndex: index + 1,
 			optionValue: option.value,
 		};
-		this.answerIndex.set(question.id, index);
-		this.answerValue.set(question.id, answer);
+		
+		let indices = this.answerIndex.get(question.id);
+		if (!indices) {
+			indices = new Set();
+			this.answerIndex.set(question.id, indices);
+		}
+		
+		let values = this.answerValue.get(question.id);
+		if (!values) {
+			values = [];
+			this.answerValue.set(question.id, values);
+		}
+		
+		if (question.isMultiSelect) {
+			if (indices.has(index)) {
+				indices.delete(index);
+				this.answerValue.set(question.id, values.filter(a => a.optionIndex !== index + 1));
+			} else {
+				indices.add(index);
+				values.push(answer);
+			}
+		} else {
+			this.answerIndex.set(question.id, new Set([index]));
+			this.answerValue.set(question.id, [answer]);
+		}
 	}
 
 	private saveCustomAnswer(question: Question, text: string): void {
@@ -299,8 +335,8 @@ class QuestionsComponent {
 			label: text,
 			source: "custom",
 		};
-		this.answerIndex.set(question.id, question.options.length);
-		this.answerValue.set(question.id, answer);
+		this.answerIndex.set(question.id, new Set([question.options.length]));
+		this.answerValue.set(question.id, [answer]);
 	}
 
 	private advanceAfterAnswer(): void {
@@ -317,8 +353,7 @@ class QuestionsComponent {
 
 	private finish(submitted: boolean): void {
 		const answers = this.questions
-			.map((question) => this.answerValue.get(question.id))
-			.filter((answer): answer is Answer => Boolean(answer));
+			.flatMap((question) => this.answerValue.get(question.id) || []);
 		this.onDone?.(makeResult(this.questions, answers, !submitted, submitted));
 	}
 
@@ -364,7 +399,10 @@ class QuestionsComponent {
 				if (this.allAnswered()) {
 					this.finish(true);
 				} else {
-					const missing = this.questions.findIndex((question) => !this.answerValue.has(question.id));
+					const missing = this.questions.findIndex((question) => {
+						const vals = this.answerValue.get(question.id);
+						return !vals || vals.length === 0;
+					});
 					if (missing >= 0) {
 						this.setTab(missing);
 					}
@@ -399,20 +437,41 @@ class QuestionsComponent {
 			this.tui.requestRender();
 			return;
 		}
-		if (matchesKey(data, Key.enter)) {
+		
+		if (matchesKey(data, Key.space) && question.isMultiSelect) {
 			const selected = options[this.optionIndex];
-			if (!selected) return;
-			if (selected.isCustom) {
-				const current = this.answerValue.get(question.id);
-				this.openCustomEditor(current?.source === "custom" ? current.value : "");
-				this.tui.requestRender();
-				return;
-			}
-			this.saveOptionAnswer(question, this.optionIndex);
-			this.advanceAfterAnswer();
+			if (!selected || selected.isCustom || selected.isDone) return;
+			this.toggleOptionAnswer(question, this.optionIndex);
 			this.tui.requestRender();
 			return;
 		}
+
+		if (matchesKey(data, Key.enter)) {
+			const selected = options[this.optionIndex];
+			if (!selected) return;
+			
+			if (selected.isDone) {
+				this.advanceAfterAnswer();
+				this.tui.requestRender();
+				return;
+			}
+			
+			if (selected.isCustom) {
+				const current = this.answerValue.get(question.id);
+				const customAnswer = current?.find(a => a.source === "custom");
+				this.openCustomEditor(customAnswer ? customAnswer.value : "");
+				this.tui.requestRender();
+				return;
+			}
+			
+			this.toggleOptionAnswer(question, this.optionIndex);
+			if (!question.isMultiSelect) {
+				this.advanceAfterAnswer();
+			}
+			this.tui.requestRender();
+			return;
+		}
+		
 		if (matchesKey(data, Key.escape)) {
 			this.finish(false);
 		}
@@ -431,7 +490,8 @@ class QuestionsComponent {
 		const pieces: string[] = [];
 		for (let i = 0; i < this.questions.length; i++) {
 			const question = this.questions[i];
-			pieces.push(this.renderTab(question.label, i === this.tabIndex, this.answerValue.has(question.id), width));
+			const isCompleted = (this.answerValue.get(question.id)?.length || 0) > 0;
+			pieces.push(this.renderTab(question.label, i === this.tabIndex, isCompleted, width));
 		}
 		if (this.isMulti()) {
 			pieces.push(this.renderTab("submit", this.isSubmitTab(), this.allAnswered(), width));
@@ -461,21 +521,26 @@ class QuestionsComponent {
 			add(this.theme.fg("accent", this.theme.bold("Review answers")));
 			lines.push("");
 			for (const q of this.questions) {
-				const answer = this.answerValue.get(q.id);
-				if (!answer) {
+				const answers = this.answerValue.get(q.id);
+				if (!answers || answers.length === 0) {
 					add(`${this.theme.fg("warning", q.label + ":")} ${this.theme.fg("dim", "(missing)")}`);
 					continue;
 				}
-				const value = answer.source === "custom"
-					? `${this.theme.fg("muted", "(wrote)")} ${answer.label}`
-					: `${answer.optionIndex}. ${answer.label}`;
-				add(`${this.theme.fg("muted", q.label + ":")} ${this.theme.fg("text", value)}`);
+				const values = answers.map(answer => 
+					answer.source === "custom"
+						? `${this.theme.fg("muted", "(wrote)")} ${answer.label}`
+						: `${answer.optionIndex}. ${answer.label}`
+				).join(", ");
+				add(`${this.theme.fg("muted", q.label + ":")} ${this.theme.fg("text", values)}`);
 			}
 			lines.push("");
 			if (this.allAnswered()) {
 				add(this.theme.fg("success", "Enter to submit • Tab / Shift+Tab to edit answers • Esc cancel"));
 			} else {
-				const missing = this.questions.filter((q) => !this.answerValue.has(q.id)).map((q) => q.label).join(", ");
+				const missing = this.questions.filter((q) => {
+					const vals = this.answerValue.get(q.id);
+					return !vals || vals.length === 0;
+				}).map((q) => q.label).join(", ");
 				add(this.theme.fg("warning", `Missing: ${missing}`));
 				add(this.theme.fg("dim", "Tab to jump to a question and fix it • Esc cancel"));
 			}
@@ -492,11 +557,23 @@ class QuestionsComponent {
 			}
 
 			const options = this.currentOptions();
+			const savedIndices = this.answerIndex.get(question.id) || new Set();
+			
 			for (let i = 0; i < options.length; i++) {
 				const opt = options[i];
 				const selected = i === this.optionIndex;
 				const prefix = selected ? this.theme.fg("accent", "> ") : "  ";
-				const label = `${i + 1}. ${opt.label}`;
+				
+				let label = "";
+				if (opt.isDone) {
+					label = `[ ${opt.label} ]`;
+				} else if (question.isMultiSelect && !opt.isCustom) {
+					const checked = savedIndices.has(i);
+					label = `${checked ? "■" : "□"} ${opt.label}`;
+				} else {
+					label = `${i + 1}. ${opt.label}`;
+				}
+				
 				const styled = selected ? this.theme.fg("accent", label) : this.theme.fg("text", label);
 				add(prefix + styled);
 				if (opt.description) {
@@ -514,8 +591,8 @@ class QuestionsComponent {
 
 			lines.push("");
 			const help = this.isMulti()
-				? " Tab/←→ switch tabs • ↑↓ options • Enter select • Esc cancel"
-				: " ↑↓ options • Enter select • Esc cancel";
+				? (question.isMultiSelect ? " Tab/←→ switch tabs • ↑↓ options • Space/Enter toggle • Esc cancel" : " Tab/←→ switch tabs • ↑↓ options • Enter select • Esc cancel")
+				: (question.isMultiSelect ? " Space/Enter toggle • Tab submit • Esc cancel" : " ↑↓ options • Enter select • Esc cancel");
 			add(this.theme.fg("dim", help));
 		}
 
@@ -537,7 +614,7 @@ export default function (pi: ExtensionAPI) {
 	// Self-register in global feature registry
 	(globalThis as any).__pi_extension_features?.push({
 		name: "questions",
-		description: "Ask the user structured multi-choice questions with custom-answer fallback and optional ASCII sketches",
+		description: "Ask the user structured questions with preset options, checkboxes, custom-answer fallback, and ASCII sketches",
 		tools: ["questions"],
 	});
 
@@ -546,12 +623,13 @@ export default function (pi: ExtensionAPI) {
 		label: "Questions",
 		renderShell: "self",
 		description:
-			"Ask the user one or more structured questions in an interactive terminal UI. Use when you need preset choices plus a free-text answer, or an optional ASCII sketch to help the decision.",
-		promptSnippet: "Ask structured questions with preset options, a custom-answer fallback, and optional ASCII sketches.",
+			"Ask the user one or more structured questions in an interactive terminal UI. Use when you need preset choices plus a free-text answer, multiple-choice checkboxes, or an optional ASCII sketch.",
+		promptSnippet: "Ask structured questions with preset options, checkboxes, a custom-answer fallback, and optional ASCII sketches. Omit options for open-ended questions.",
 		promptGuidelines: [
 			"Use 1-10 questions in one call when you need to collect multiple related answers.",
+			"Set isMultiSelect to true to allow the user to select multiple options via checkboxes.",
 			"Give each question a short 1-2 word tab label.",
-			"Provide 1-10 explicit preset options per question.",
+			"Provide up to 10 preset options per question, or omit options entirely for open-ended questions.",
 			"The UI always adds 'Type your own answer' as the last choice.",
 			"Add an ASCII sketch only for layout or flow; do not restate answer options in the sketch or wrap them in square brackets.",
 		],

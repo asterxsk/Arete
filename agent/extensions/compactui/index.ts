@@ -10,6 +10,7 @@
  *   - ui-changes/index.ts (output truncation)
  */
 
+import path from "path";
 import type { ExtensionAPI, EditToolDetails } from "@earendil-works/pi-coding-agent";
 import {
   AssistantMessageComponent,
@@ -33,9 +34,7 @@ const MAX_LINES = 5;
 const TRUNCATED_TOOLS = new Set(["bash", "powershell", "run_command"]);
 // HERMES_TOOLS removed — memory, skill_manage, session_search, memory_search
 // now have their own renderCall/renderResult in pi-hermes-memory extension
-
 // ── Helpers ────────────────────────────────────────────────────────────
-
 function colorThinkingText(text: string): string {
     return `\x1b[38;2;112;112;128m${text}\x1b[39m`;
 }
@@ -72,7 +71,7 @@ class ThinkingBlock extends Container {
         
         const contentWidth = Math.max(1, width - this.paddingX * 2 - 2);
         const leftPad = " ".repeat(this.paddingX);
-        const textLines = this.text.split("\n");
+        const textLines = this.text.trim().split("\n");
         
         const visualLines: { text: string; isEmpty: boolean }[] = [];
         for (const line of textLines) {
@@ -89,7 +88,7 @@ class ThinkingBlock extends Container {
         
         const result: string[] = [];
         const lastNonEmptyIdx = visualLines.reduce((acc, line, i) => line.isEmpty ? acc : i, 0);
-        const isSingleLine = visualLines.filter(l => !l.isEmpty).length <= 1;
+        const isSingleLine = textLines.filter(l => l.trim() !== "").length <= 1;
 
         for (let i = 0; i < visualLines.length; i++) {
             const vl = visualLines[i];
@@ -99,10 +98,12 @@ class ThinkingBlock extends Container {
             }
             let prefix: string;
             if (isSingleLine) {
-                prefix = "└ ";
-            }
-            else if (i === 0) {
-                prefix = "│ ";
+                if (i === 0) {
+                    result.push(leftPad + colorThinkingText("└ ") + this.applyStyle(vl.text));
+                } else {
+                    result.push(leftPad + "  " + this.applyStyle(vl.text));
+                }
+                continue;
             }
             else if (i === lastNonEmptyIdx) {
                 prefix = "└ ";
@@ -285,7 +286,7 @@ export default function (pi: ExtensionAPI) {
     tool.renderShell = "self";
 
     tool.renderCall = (args: any, theme: any, context: any) => {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       let argsLine = "??";
       if (tool.name === "run_command") argsLine = args.CommandLine as string || "?";
       else if (tool.name === "manage_task") argsLine = `${args.Action} ${args.TaskId || ""}`.trim();
@@ -354,17 +355,14 @@ export default function (pi: ExtensionAPI) {
     try {
         const originalUserRender = UserMessageComponent.prototype.render;
         UserMessageComponent.prototype.render = function(width: number) {
-            const lines = originalUserRender.call(this, width);
-            if (lines.length > 0) {
-                return ["", ...lines];
-            }
-            return lines;
+            return originalUserRender.call(this, width);
         };
 
         const originalAssistantRender = AssistantMessageComponent.prototype.render;
         AssistantMessageComponent.prototype.render = function(width: number) {
             const lines = originalAssistantRender.call(this, width);
-            if (lines.length > 0) {
+            const hasThinkingFirst = this.lastMessage?.content?.[0]?.type === "thinking" && this.lastMessage.content[0].thinking.trim();
+            if (lines.length > 0 && !hasThinkingFirst) {
                 return ["", ...lines];
             }
             return lines;
@@ -375,30 +373,29 @@ export default function (pi: ExtensionAPI) {
             this.contentContainer.clear();
             const hasVisibleContent = message.content.some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
             
+            let hasThinking = false;
             for (let i = 0; i < message.content.length; i++) {
                 const content = message.content[i];
                 if (content.type === "text" && content.text.trim()) {
+                    if (hasThinking) {
+                        this.contentContainer.addChild(line(""));
+                    }
                     this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
                 }
                 else if (content.type === "thinking" && content.thinking.trim()) {
+                    hasThinking = true;
                     const hasVisibleContentAfter = message.content
                         .slice(i + 1)
                         .some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
                     
                     if (this.hideThinkingBlock) {
                         this.contentContainer.addChild(new Text(italicText(colorThinkingText(this.hiddenThinkingLabel)), 1, 0));
-                        if (hasVisibleContentAfter) {
-                            this.contentContainer.addChild(new Spacer(1));
-                        }
                     }
                     else {
                         this.contentContainer.addChild(new ThinkingBlock(content.thinking.trim(), 1, 0, this.markdownTheme, {
                             color: colorThinkingText,
                             italic: true,
                         }));
-                        if (hasVisibleContentAfter) {
-                            this.contentContainer.addChild(new Spacer(1));
-                        }
                     }
                 }
             }
@@ -414,11 +411,35 @@ export default function (pi: ExtensionAPI) {
                 }
                 else if (message.stopReason === "error") {
                     const errorMsg = message.errorMessage || "Unknown error";
-                    this.contentContainer.addChild(new Spacer(1));
                     this.contentContainer.addChild(new Text(`\x1b[38;2;255;85;85mError: ${errorMsg}\x1b[39m`, 1, 0));
                 }
             }
         };
+        
+        const corePath = require.resolve("@earendil-works/pi-coding-agent");
+        const interactiveModePath = path.join(path.dirname(corePath), "modes/interactive/interactive-mode.js");
+        const InteractiveModeModule = require(interactiveModePath);
+        if (InteractiveModeModule && InteractiveModeModule.InteractiveMode && InteractiveModeModule.InteractiveMode.prototype.syncMessages && !InteractiveModeModule.InteractiveMode.prototype.syncMessages.__compactui_patched) {
+            const originalSyncMessages = InteractiveModeModule.InteractiveMode.prototype.syncMessages;
+            InteractiveModeModule.InteractiveMode.prototype.syncMessages = function() {
+                const originalAddChild = this.chatContainer.addChild;
+                this.chatContainer.addChild = function(child: any) {
+                    if (child && child.constructor && child.constructor.name === "Spacer") {
+                        return; // Remove all spacers between messages for compact UI
+                    }
+                    return originalAddChild.apply(this, arguments);
+                };
+                
+                let result;
+                try {
+                    result = originalSyncMessages.apply(this, arguments);
+                } finally {
+                    this.chatContainer.addChild = originalAddChild;
+                }
+                return result;
+            };
+            InteractiveModeModule.InteractiveMode.prototype.syncMessages.__compactui_patched = true;
+        }
         
 		patchedAssistant = true;
     } catch (e) {
@@ -516,7 +537,7 @@ export default function (pi: ExtensionAPI) {
       return captureResult(await originalRead.execute(toolCallId, params, signal, onUpdate), Date.now() - t0);
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("read", args.path ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
@@ -546,7 +567,7 @@ export default function (pi: ExtensionAPI) {
       return captureResult(await originalWrite.execute(toolCallId, params, signal, onUpdate), Date.now() - t0);
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("write", args.path ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
@@ -577,7 +598,7 @@ export default function (pi: ExtensionAPI) {
       return { ...result, details: { ...result.details, _fullOutput: fullText, _durationS: durationMs / 1000 } };
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("edit", args.path ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
@@ -603,7 +624,7 @@ export default function (pi: ExtensionAPI) {
       return captureResult(await originalBash.execute(toolCallId, params, signal, onUpdate), Date.now() - t0);
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("bash", args.command ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
@@ -630,7 +651,7 @@ export default function (pi: ExtensionAPI) {
       return captureResult(await originalLs.execute(toolCallId, params, signal, onUpdate), Date.now() - t0);
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("ls", args.path || ".", theme);
     },
     renderResult(result, { expanded }, theme, context) {
@@ -656,7 +677,7 @@ export default function (pi: ExtensionAPI) {
       return captureResult(await originalGrep.execute(toolCallId, params, signal, onUpdate), Date.now() - t0);
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("grep", args.pattern ?? "?", theme);
     },
     renderResult(result, { expanded }, theme, context) {
@@ -682,7 +703,7 @@ export default function (pi: ExtensionAPI) {
       return captureResult(await originalFind.execute(toolCallId, params, signal, onUpdate), Date.now() - t0);
     },
     renderCall(args, theme, context) {
-      if (context.expanded) return line("");
+      if (context.expanded) return noOp();
       return compactCall("find", (args.pattern ?? "?") + (args.path ? " " + args.path : ""), theme);
     },
     renderResult(result, { expanded }, theme, context) {
