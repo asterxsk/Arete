@@ -173,9 +173,6 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
   const hasMore = lines.length > limit;
   const raw: string[] = [];
 
-  // Header line
-  raw.push(INDENT + orange(theme, headerName) + " [" + argsLine + "]");
-
   // Output lines with │ prefix aligned under [
   const padding = " ".repeat(headerName.length + 1);
   const CONTENT_INDENT = padding + "│ ";
@@ -195,6 +192,26 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
   return {
     render(width) {
       const result: string[] = [];
+      const headerPrefix = INDENT + orange(theme, headerName) + " [";
+      const headerPrefixWidth = INDENT.length + headerName.length + 2;
+      const argsWidth = Math.max(10, width - headerPrefixWidth - 1);
+      
+      const wrappedArgs = wrapTextWithAnsi(argsLine, argsWidth);
+      if (wrappedArgs.length === 0) {
+        result.push(headerPrefix + "]");
+      } else {
+        for (let i = 0; i < wrappedArgs.length; i++) {
+          if (i === 0) {
+            const suffix = wrappedArgs.length === 1 ? "]" : "";
+            result.push(headerPrefix + wrappedArgs[i] + suffix);
+          } else {
+            const prefix = " ".repeat(headerPrefixWidth);
+            const suffix = i === wrappedArgs.length - 1 ? "]" : "";
+            result.push(prefix + wrappedArgs[i] + suffix);
+          }
+        }
+      }
+
       for (const rl of raw) {
         if (!rl) result.push("");
         else if (visibleWidth(rl) <= width) result.push(rl);
@@ -221,9 +238,6 @@ function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines
   const hasMore = lines.length > limit;
   const raw: string[] = [];
 
-  // Header line
-  raw.push(INDENT + orange(theme, headerName) + " [" + argsLine + "]");
-
   // Diff lines with │ prefix, colored by +/-
   const padding = " ".repeat(headerName.length + 1);
   const CONTENT_INDENT = padding + "│ ";
@@ -243,6 +257,26 @@ function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines
   return {
     render(width) {
       const result: string[] = [];
+      const headerPrefix = INDENT + orange(theme, headerName) + " [";
+      const headerPrefixWidth = INDENT.length + headerName.length + 2;
+      const argsWidth = Math.max(10, width - headerPrefixWidth - 1);
+      
+      const wrappedArgs = wrapTextWithAnsi(argsLine, argsWidth);
+      if (wrappedArgs.length === 0) {
+        result.push(headerPrefix + "]");
+      } else {
+        for (let i = 0; i < wrappedArgs.length; i++) {
+          if (i === 0) {
+            const suffix = wrappedArgs.length === 1 ? "]" : "";
+            result.push(headerPrefix + wrappedArgs[i] + suffix);
+          } else {
+            const prefix = " ".repeat(headerPrefixWidth);
+            const suffix = i === wrappedArgs.length - 1 ? "]" : "";
+            result.push(prefix + wrappedArgs[i] + suffix);
+          }
+        }
+      }
+
       for (const rl of raw) {
         if (!rl) result.push("");
         else if (visibleWidth(rl) <= width) result.push(rl);
@@ -296,7 +330,6 @@ export default function (pi: ExtensionAPI) {
       }
       else {
         argsLine = Object.values(args || {}).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(" ");
-        if (argsLine.length > 30) argsLine = argsLine.slice(0, 27) + "...";
       }
       return compactCall(tool.name, argsLine, theme);
     };
@@ -313,7 +346,6 @@ export default function (pi: ExtensionAPI) {
       }
       else {
         argsLine = Object.values(context.args || {}).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(" ");
-        if (argsLine.length > 30) argsLine = argsLine.slice(0, 27) + "...";
       }
       
       const content = result.content?.[0];
