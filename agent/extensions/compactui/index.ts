@@ -14,6 +14,7 @@ import path from "path";
 import type { ExtensionAPI, EditToolDetails } from "@earendil-works/pi-coding-agent";
 import {
   AssistantMessageComponent,
+  InteractiveMode,
   UserMessageComponent,
   createBashTool,
   createEditTool,
@@ -22,6 +23,7 @@ import {
   createLsTool,
   createReadTool,
   createWriteTool,
+  ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth, Container, Markdown, Spacer, Text, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -302,11 +304,67 @@ export default function (pi: ExtensionAPI) {
     const EXCLUDED_TOOLS = new Set(["subagent", "read", "write", "edit", "bash", "ls", "grep", "find", "memory", "memory_search", "session_search"]);
     if (EXCLUDED_TOOLS.has(tool.name)) return;
 
-    if (tool.name === "todo") {
+    class CustomBlock {
+      width: number;
+      height: number;
+      lines: string[];
+      constructor(lines: string[]) {
+        this.lines = lines;
+        this.width = 0; // Not strictly needed
+        this.height = lines.length;
+      }
+      invalidate() {}
+      handleInput() {}
+      render(width: number) {
+        return this.lines.map((l: string) => truncateToWidth(l, width));
+      }
+    }
+
+    // ── Todo ───────────────────────────────────────────────────────────────
+    if (tool.name === "todo" || tool.name === "manage_todo") {
       if (tool.__compactui_patched) return;
       tool.__compactui_patched = true;
-      tool.renderCall = () => noOp();
-      tool.renderResult = () => noOp();
+      tool.renderShell = "self";
+      tool.renderCall = (args: any, theme: any, context: any) => {
+        return noOp();
+      };
+      tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
+        return noOp();
+      };
+      return;
+    }
+
+    // ── Ask Question ───────────────────────────────────────────────────────
+    if (tool.name === "ask_question" || tool.name === "ask_questions" || tool.name === "questions" || tool.name === "question") {
+      if (tool.__compactui_patched) return;
+      tool.__compactui_patched = true;
+      tool.renderShell = "self";
+      tool.renderCall = (args: any, theme: any, context: any) => {
+        if (context.expanded) return noOp();
+        let count = 1;
+        if (args && Array.isArray(args.questions)) count = args.questions.length;
+        return line(INDENT + orange(theme, tool.name) + " [" + `asking ${count} question${count === 1 ? '' : 's'}` + "]" + theme.fg("dim", " (ctrl+o to expand)"));
+      };
+      tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
+        if (result.isError) return compactFailed(theme);
+        let count = 1;
+        if (context?.args && Array.isArray(context.args.questions)) {
+          count = context.args.questions.length;
+        }
+        
+        if (!opts.expanded) {
+          return line(INDENT + theme.fg("dim", `⎿ answered ${count} question${count === 1 ? '' : 's'}`));
+        } else {
+          const res = [];
+          res.push(INDENT + orange(theme, tool.name) + " [questions]");
+          const text = result.content?.[0]?.text || "";
+          for (const l of text.split('\n')) {
+            if (l.trim()) res.push(INDENT + "  " + theme.fg("dim", "│ ") + l);
+          }
+          res.push(INDENT + "  " + theme.fg("dim", "└ ") + theme.fg("dim", "Took 0.2s [ctrl+o to hide]"));
+          return new CustomBlock(res) as any;
+        }
+      };
       return;
     }
 
@@ -488,6 +546,7 @@ export default function (pi: ExtensionAPI) {
   // Patch the instance's registerTool
   const origRegister = pi.registerTool.bind(pi);
   pi.registerTool = (tool: any) => {
+    require('fs').appendFileSync('C:/Users/prithish/.pi/agent/extensions/compactui/debug.log', `Patched instance registerTool: ${tool.name}\n`);
     patchTool(tool);
     origRegister(tool);
   };
@@ -498,6 +557,7 @@ export default function (pi: ExtensionAPI) {
     (proto as any).__compactui_patched_register = true;
     const origProtoRegister = proto.registerTool;
     proto.registerTool = function(tool: any) {
+      require('fs').appendFileSync('C:/Users/prithish/.pi/agent/extensions/compactui/debug.log', `Patched proto registerTool: ${tool.name}\n`);
       patchTool(tool);
       return origProtoRegister.call(this, tool);
     };
@@ -510,18 +570,32 @@ export default function (pi: ExtensionAPI) {
     try {
         const originalUserRender = UserMessageComponent.prototype.render;
         UserMessageComponent.prototype.render = function(width: number) {
-            return originalUserRender.call(this, width);
+            const lines = originalUserRender.call(this, width);
+            return ["", ...lines, ""];
         };
+        
+        // Remove the native Spacer(1) that InteractiveMode adds before user messages
+        if (InteractiveMode && InteractiveMode.prototype.addMessageToChat && !(InteractiveMode.prototype.addMessageToChat as any).__compactui_patched) {
+            const originalAdd = InteractiveMode.prototype.addMessageToChat;
+            InteractiveMode.prototype.addMessageToChat = function(message: any, options?: any) {
+                const lenBefore = this.chatContainer.children.length;
+                originalAdd.call(this, message, options);
+                
+                if (message.role === "user") {
+                    const lenAfter = this.chatContainer.children.length;
+                    // If it added a Spacer followed by the UserMessageComponent, remove the Spacer
+                    if (lenAfter >= 2 && lenAfter > lenBefore + 1) {
+                        const secondToLast = this.chatContainer.children[lenAfter - 2];
+                        if (secondToLast && secondToLast.constructor.name === "Spacer") {
+                            this.chatContainer.children.splice(lenAfter - 2, 1);
+                        }
+                    }
+                }
+            };
+            (InteractiveMode.prototype.addMessageToChat as any).__compactui_patched = true;
+        }
 
         const originalAssistantRender = AssistantMessageComponent.prototype.render;
-        AssistantMessageComponent.prototype.render = function(width: number) {
-            const lines = originalAssistantRender.call(this, width);
-            const hasThinkingFirst = this.lastMessage?.content?.[0]?.type === "thinking" && this.lastMessage.content[0].thinking.trim();
-            if (lines.length > 0 && !hasThinkingFirst) {
-                return ["", ...lines];
-            }
-            return lines;
-        };
 
         AssistantMessageComponent.prototype.updateContent = function(message: any) {
             this.lastMessage = message;
@@ -535,13 +609,51 @@ export default function (pi: ExtensionAPI) {
                     if (hasThinking) {
                         this.contentContainer.addChild(line(""));
                     }
-                    this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+                    if (content.text) {
+                        this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+                    }
                 }
-                else if (content.type === "thinking" && content.thinking.trim()) {
+                else if (content.type === "thinking" && content.thinking && content.thinking.trim()) {
                     hasThinking = true;
+                    
+                    if (!content._clientStartTime) {
+                        content._clientStartTime = Date.now();
+                    }
+
                     const hasVisibleContentAfter = message.content
                         .slice(i + 1)
-                        .some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+                        .some((c: any) => (c.type === "text" && c.text && c.text.trim()) || (c.type === "thinking" && c.thinking && c.thinking.trim()) || c.type === "toolCall");
+                    
+                    const isThinkingDone = hasVisibleContentAfter || message.stopReason;
+                    
+                    if (isThinkingDone && !content._clientEndTime) {
+                        content._clientEndTime = Date.now();
+                    }
+
+                    if (isThinkingDone) {
+                        let durationS = 0;
+                        if (typeof content.durationMs === "number") {
+                            durationS = Math.round(content.durationMs / 1000);
+                        } else if (content._clientEndTime && content._clientStartTime && (content._clientEndTime - content._clientStartTime) > 100) {
+                            content.durationMs = content._clientEndTime - content._clientStartTime;
+                            durationS = Math.round(content.durationMs / 1000);
+                        } else if (content._clientStartTime) {
+                            const fallbackDuration = Date.now() - content._clientStartTime;
+                            if (fallbackDuration > 100) {
+                                content.durationMs = fallbackDuration;
+                                durationS = Math.round(fallbackDuration / 1000);
+                            }
+                        }
+                        
+                        durationS = Math.max(0, durationS);
+                        if (durationS > 0) {
+                            this.hiddenThinkingLabel = `✻ Thought for ${durationS}s`;
+                        } else {
+                            this.hiddenThinkingLabel = `✻ Thought`;
+                        }
+                    } else {
+                        this.hiddenThinkingLabel = "✻  Thinking...";
+                    }
                     
                     if (this.hideThinkingBlock) {
                         this.contentContainer.addChild(new Text(italicText(colorThinkingText(this.hiddenThinkingLabel)), 1, 0));
@@ -571,12 +683,44 @@ export default function (pi: ExtensionAPI) {
             }
         };
         
-        const corePath = require.resolve("@earendil-works/pi-coding-agent");
-        const interactiveModePath = path.join(path.dirname(corePath), "modes/interactive/interactive-mode.js");
-        const InteractiveModeModule = require(interactiveModePath);
-        if (InteractiveModeModule && InteractiveModeModule.InteractiveMode && InteractiveModeModule.InteractiveMode.prototype.syncMessages && !InteractiveModeModule.InteractiveMode.prototype.syncMessages.__compactui_patched) {
-            const originalSyncMessages = InteractiveModeModule.InteractiveMode.prototype.syncMessages;
-            InteractiveModeModule.InteractiveMode.prototype.syncMessages = function() {
+        if (InteractiveMode && InteractiveMode.prototype.syncMessages && !InteractiveMode.prototype.syncMessages.__compactui_patched) {
+            
+            // ── NEW: Monkey Patch ToolExecutionComponent to lazily patch tools ──
+            if (ToolExecutionComponent && ToolExecutionComponent.prototype.render && !ToolExecutionComponent.prototype.render.__compactui_patched) {
+                const originalRender = ToolExecutionComponent.prototype.render;
+                ToolExecutionComponent.prototype.render = function() {
+                    let needsUpdate = false;
+                    if (this.toolDefinition && typeof (globalThis as any).__pi_patchTool === "function") {
+                        if (!this.toolDefinition.__compactui_patched) {
+                            (globalThis as any).__pi_patchTool(this.toolDefinition);
+                            needsUpdate = true;
+                        }
+                    }
+                    if (this.builtInToolDefinition && typeof (globalThis as any).__pi_patchTool === "function") {
+                        if (!this.builtInToolDefinition.__compactui_patched) {
+                            (globalThis as any).__pi_patchTool(this.builtInToolDefinition);
+                            needsUpdate = true;
+                        }
+                    }
+                    
+                    // Remove native Spacer(1) at the top if this is a hidden tool like 'todo'
+                    if (this.toolName === "todo" || this.toolName === "manage_todo") {
+                        if (this.children && this.children.length > 0 && this.children[0].constructor.name === "Spacer") {
+                            this.children.shift();
+                        }
+                    }
+
+                    if (needsUpdate && typeof this.updateDisplay === "function") {
+                        // Force it to use the new renderers now that the definition is patched
+                        this.updateDisplay();
+                    }
+                    return originalRender.apply(this, arguments);
+                };
+                ToolExecutionComponent.prototype.render.__compactui_patched = true;
+            }
+
+            const originalSyncMessages = InteractiveMode.prototype.syncMessages;
+            InteractiveMode.prototype.syncMessages = function() {
                 const originalAddChild = this.chatContainer.addChild;
                 this.chatContainer.addChild = function(child: any) {
                     if (child && child.constructor && child.constructor.name === "Spacer") {
@@ -593,7 +737,98 @@ export default function (pi: ExtensionAPI) {
                 }
                 return result;
             };
-            InteractiveModeModule.InteractiveMode.prototype.syncMessages.__compactui_patched = true;
+            InteractiveMode.prototype.syncMessages.__compactui_patched = true;
+
+            const originalToggleExpand = InteractiveMode.prototype.toggleToolOutputExpansion;
+            if (originalToggleExpand && !InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched) {
+                InteractiveMode.prototype.toggleToolOutputExpansion = function() {
+                    const scroll = this.chatContainer && typeof this.chatContainer.getScroll === 'function' ? this.chatContainer.getScroll() : undefined;
+                    
+                    originalToggleExpand.apply(this, arguments);
+
+                    this.hideThinkingBlock = !this.hideThinkingBlock;
+                    if (this.settingsManager && typeof this.settingsManager.setHideThinkingBlock === "function") {
+                        this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
+                    }
+                    if (this.chatContainer) {
+                        this.chatContainer.clear();
+                    }
+                    if (typeof this.rebuildChatFromMessages === "function") {
+                        this.rebuildChatFromMessages();
+                    }
+                    if (this.streamingComponent && this.streamingMessage && this.chatContainer) {
+                        if (typeof this.streamingComponent.setHideThinkingBlock === "function") {
+                            this.streamingComponent.setHideThinkingBlock(this.hideThinkingBlock);
+                        }
+                        if (typeof this.streamingComponent.updateContent === "function") {
+                            this.streamingComponent.updateContent(this.streamingMessage);
+                        }
+                        this.chatContainer.addChild(this.streamingComponent);
+                    }
+                    if (typeof this.showStatus === "function") {
+                        this.showStatus(`Tools & Thinking toggled`);
+                    }
+
+                    if (scroll !== undefined && this.chatContainer && typeof this.chatContainer.setScroll === 'function') {
+                        setTimeout(() => {
+                            if (this.chatContainer && typeof this.chatContainer.setScroll === 'function') {
+                                this.chatContainer.setScroll(scroll);
+                            }
+                            if (this.ui && typeof this.ui.requestRender === 'function') {
+                                this.ui.requestRender();
+                            }
+                        }, 10);
+                    }
+                };
+                InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched = true;
+            }
+
+            const originalToggleThinking = InteractiveMode.prototype.toggleThinkingBlockVisibility;
+            if (originalToggleThinking && !InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched) {
+                InteractiveMode.prototype.toggleThinkingBlockVisibility = function() {
+                    const scroll = this.chatContainer && typeof this.chatContainer.getScroll === 'function' ? this.chatContainer.getScroll() : undefined;
+                    
+                    if (typeof this.cycleThinkingLevel === "function") {
+                        // In the base code, cycleThinkingLevel modifies state. Since we are overriding it below, 
+                        // we must ensure we call the cycle logic. Actually, we can just call the original logic here
+                        // if we want, or just call this.cycleThinkingLevel().
+                        this.cycleThinkingLevel();
+                    }
+
+                    if (scroll !== undefined && this.chatContainer && typeof this.chatContainer.setScroll === 'function') {
+                        setTimeout(() => {
+                            if (this.chatContainer && typeof this.chatContainer.setScroll === 'function') {
+                                this.chatContainer.setScroll(scroll);
+                            }
+                            if (this.ui && typeof this.ui.requestRender === 'function') {
+                                this.ui.requestRender();
+                            }
+                        }, 10);
+                    }
+                };
+                InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched = true;
+            }
+
+            const originalCycleThinking = InteractiveMode.prototype.cycleThinkingLevel;
+            if (originalCycleThinking && !InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched) {
+                InteractiveMode.prototype.cycleThinkingLevel = function() {
+                    const scroll = this.chatContainer && typeof this.chatContainer.getScroll === 'function' ? this.chatContainer.getScroll() : undefined;
+                    
+                    originalCycleThinking.apply(this, arguments);
+
+                    if (scroll !== undefined && this.chatContainer && typeof this.chatContainer.setScroll === 'function') {
+                        setTimeout(() => {
+                            if (this.chatContainer && typeof this.chatContainer.setScroll === 'function') {
+                                this.chatContainer.setScroll(scroll);
+                            }
+                            if (this.ui && typeof this.ui.requestRender === 'function') {
+                                this.ui.requestRender();
+                            }
+                        }, 10);
+                    }
+                };
+                InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched = true;
+            }
         }
         
 		patchedAssistant = true;

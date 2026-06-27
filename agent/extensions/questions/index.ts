@@ -97,13 +97,13 @@ interface QuestionsResult {
 }
 
 const QuestionOptionSchema = Type.Object({
-	value: Type.String({ description: "Value sent back when this option is selected" }),
-	label: Type.String({ description: "Display label for this option" }),
-	description: Type.Optional(Type.String({ description: "Optional helper text under the option" })),
+	value: Type.String({ description: "Short internal identifier for the option (e.g. 'opt1' or 'sqlite')" }),
+	label: Type.String({ description: "Display text for this option shown to the user" }),
+	description: Type.Optional(Type.String({ description: "Optional helper text to explain the option in more detail" })),
 });
 
 const QuestionSchema = Type.Object({
-	id: Type.String({ description: "Unique question id" }),
+	id: Type.String({ description: "Short unique identifier for this question" }),
 	label: Type.Optional(
 		Type.String({
 			description: "Short 1-2 word tab label, e.g. 'Scope' or 'Auth'",
@@ -115,13 +115,13 @@ const QuestionSchema = Type.Object({
 	),
 	options: Type.Optional(Type.Array(QuestionOptionSchema, {
 		maxItems: 10,
-		description: "Up to 10 preset options. Omit for open-ended questions. The UI appends 'Type your own answer' as last option.",
+		description: "Provide at least 2 preset options for multiple choice. Omit for open-ended questions. The UI appends 'Type your own answer' as last option.",
 	})),
-	isMultiSelect: Type.Optional(Type.Boolean({ description: "If true, allows multiple answers to be selected via checkboxes." })),
+	isMultiSelect: Type.Optional(Type.Boolean({ description: "Set to true ONLY if the user can select multiple options simultaneously." })),
 });
 
 const QuestionsParams = Type.Object({
-	questions: Type.Array(QuestionSchema, { minItems: 1, description: "Questions to ask the user" }),
+	questions: Type.Array(QuestionSchema, { minItems: 1, description: "A list of questions to ask the user" }),
 });
 
 function normalizeLabel(label: string | undefined, fallback: string): string {
@@ -246,9 +246,6 @@ class QuestionsComponent {
 			...question.options,
 			{ value: "__pi_custom_answer__", label: "Type your own answer", isCustom: true },
 		];
-		if (question.isMultiSelect) {
-			opts.push({ value: "__pi_done__", label: "Done", isDone: true });
-		}
 		return opts;
 	}
 
@@ -289,7 +286,7 @@ class QuestionsComponent {
 
 	private toggleOptionAnswer(question: Question, index: number): void {
 		const option = this.currentOptions()[index];
-		if (!option || option.isCustom || option.isDone) return;
+		if (!option || option.isCustom) return;
 		
 		const answer: Answer = {
 			questionId: question.id,
@@ -440,8 +437,9 @@ class QuestionsComponent {
 		
 		if (matchesKey(data, Key.space) && question.isMultiSelect) {
 			const selected = options[this.optionIndex];
-			if (!selected || selected.isCustom || selected.isDone) return;
+			if (!selected || selected.isCustom) return;
 			this.toggleOptionAnswer(question, this.optionIndex);
+			this.invalidate();
 			this.tui.requestRender();
 			return;
 		}
@@ -449,12 +447,6 @@ class QuestionsComponent {
 		if (matchesKey(data, Key.enter)) {
 			const selected = options[this.optionIndex];
 			if (!selected) return;
-			
-			if (selected.isDone) {
-				this.advanceAfterAnswer();
-				this.tui.requestRender();
-				return;
-			}
 			
 			if (selected.isCustom) {
 				const current = this.answerValue.get(question.id);
@@ -464,10 +456,13 @@ class QuestionsComponent {
 				return;
 			}
 			
-			this.toggleOptionAnswer(question, this.optionIndex);
-			if (!question.isMultiSelect) {
+			if (question.isMultiSelect) {
+				this.advanceAfterAnswer();
+			} else {
+				this.toggleOptionAnswer(question, this.optionIndex);
 				this.advanceAfterAnswer();
 			}
+			
 			this.tui.requestRender();
 			return;
 		}
@@ -535,7 +530,7 @@ class QuestionsComponent {
 			}
 			lines.push("");
 			if (this.allAnswered()) {
-				add(this.theme.fg("success", "Enter to submit • Tab / Shift+Tab to edit answers • Esc cancel"));
+				add(this.theme.fg("dim", " Enter to submit • Tab / Shift+Tab to edit answers • Esc cancel"));
 			} else {
 				const missing = this.questions.filter((q) => {
 					const vals = this.answerValue.get(q.id);
@@ -565,9 +560,7 @@ class QuestionsComponent {
 				const prefix = selected ? this.theme.fg("accent", "> ") : "  ";
 				
 				let label = "";
-				if (opt.isDone) {
-					label = `[ ${opt.label} ]`;
-				} else if (question.isMultiSelect && !opt.isCustom) {
+				if (question.isMultiSelect && !opt.isCustom) {
 					const checked = savedIndices.has(i);
 					label = `${checked ? "■" : "□"} ${opt.label}`;
 				} else {
@@ -591,8 +584,8 @@ class QuestionsComponent {
 
 			lines.push("");
 			const help = this.isMulti()
-				? (question.isMultiSelect ? " Tab/←→ switch tabs • ↑↓ options • Space/Enter toggle • Esc cancel" : " Tab/←→ switch tabs • ↑↓ options • Enter select • Esc cancel")
-				: (question.isMultiSelect ? " Space/Enter toggle • Tab submit • Esc cancel" : " ↑↓ options • Enter select • Esc cancel");
+				? (question.isMultiSelect ? " Tab/←→ switch tabs • ↑↓ options • Space check • Enter send • Esc cancel" : " Tab/←→ switch tabs • ↑↓ options • Enter select • Esc cancel")
+				: (question.isMultiSelect ? " Space check • Enter send • Esc cancel" : " ↑↓ options • Enter select • Esc cancel");
 			add(this.theme.fg("dim", help));
 		}
 
@@ -624,13 +617,14 @@ export default function (pi: ExtensionAPI) {
 		renderShell: "self",
 		description:
 			"Ask the user one or more structured questions in an interactive terminal UI. Use when you need preset choices plus a free-text answer, multiple-choice checkboxes, or an optional ASCII sketch.",
-		promptSnippet: "Ask structured questions with preset options, checkboxes, a custom-answer fallback, and optional ASCII sketches. Omit options for open-ended questions.",
+		promptSnippet: "Ask structured questions with preset options, checkboxes, a custom-answer fallback, and optional ASCII sketches. Use options for multiple choice; omit options for open-ended text input.",
 		promptGuidelines: [
+			"CRITICAL: If a question is multiple-choice, you MUST provide at least 2 preset options.",
+			"CRITICAL: If a question is open-ended (free text), you MUST OMIT the options array entirely.",
 			"Use 1-10 questions in one call when you need to collect multiple related answers.",
-			"Set isMultiSelect to true to allow the user to select multiple options via checkboxes.",
+			"Set isMultiSelect to true ONLY if the user can select multiple options simultaneously via checkboxes.",
 			"Give each question a short 1-2 word tab label.",
-			"Provide up to 10 preset options per question, or omit options entirely for open-ended questions.",
-			"The UI always adds 'Type your own answer' as the last choice.",
+			"The UI always adds 'Type your own answer' as the last choice automatically.",
 			"Add an ASCII sketch only for layout or flow; do not restate answer options in the sketch or wrap them in square brackets.",
 		],
 		parameters: QuestionsParams,
