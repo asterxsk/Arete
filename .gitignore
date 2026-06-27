@@ -4,6 +4,7 @@
 # Un-ignore specific root files
 !.gitignore
 !AGENTS.md
+!README.md
 !LICENSE
 !version.txt
 
