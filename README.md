@@ -1,10 +1,4 @@
 <div align="center">
-  <pre>
- ▝██████████▘
-   ██    ██
-   ██    ██
-  ▄██    ██▄
-  </pre>
   <h1>Arete</h1>
   <p><strong>A powerful, modular collection of extensions for the Pi Agent</strong></p>
   
