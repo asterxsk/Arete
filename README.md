@@ -46,10 +46,13 @@ To install Arete into your local Pi Agent environment, simply clone it into your
 Open PowerShell and run the following commands:
 
 ```powershell
-# 1. Backup your existing agent config
-Copy-Item -Path $HOME\.pi\agent -Destination $HOME\.pi\agent.bak -Recurse -Force
+# 1. Backup your existing agent config (excluding node_modules)
+robocopy $HOME\.pi\agent $HOME\.pi\agent.bak /E /XD node_modules | Out-Null
 
-# 2. Clone Arete directly into your Pi directory
+# 2. Delete the old agent folder so git can clone cleanly
+Remove-Item -Path $HOME\.pi\agent -Recurse -Force
+
+# 3. Clone Arete directly into your Pi directory
 git clone https://github.com/asterxsk/arete.git $HOME\.pi\agent
 ```
 
@@ -58,10 +61,13 @@ git clone https://github.com/asterxsk/arete.git $HOME\.pi\agent
 Open your terminal and run the following commands:
 
 ```bash
-# 1. Backup your existing agent config
-cp -r ~/.pi/agent ~/.pi/agent.bak
+# 1. Backup your existing agent config (excluding node_modules)
+rsync -a --exclude 'node_modules' ~/.pi/agent/ ~/.pi/agent.bak/
 
-# 2. Clone Arete directly into your Pi directory
+# 2. Delete the old agent folder so git can clone cleanly
+rm -rf ~/.pi/agent
+
+# 3. Clone Arete directly into your Pi directory
 git clone https://github.com/asterxsk/arete.git ~/.pi/agent
 ```
 
