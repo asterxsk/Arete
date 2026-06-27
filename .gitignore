@@ -5,6 +5,7 @@
 !.gitignore
 !AGENTS.md
 !LICENSE
+!version.txt
 
 # Un-ignore agent folder
 !agent/

@@ -56,7 +56,7 @@ export default function init(pi: ExtensionAPI) {
 					const exts: { name: string, isEnabled: boolean }[] = [];
 					
 					for (const dir of dirs) {
-						if (dir === '.fallow' || dir === 'perms') continue;
+						if (dir === '.fallow' || dir === 'perms' || dir === 'header') continue;
 						const indexPath = path.join(extsDir, dir, 'index.ts');
 						const disabledPath = path.join(extsDir, dir, 'index.ts.disabled');
 						const isEnabled = fs.existsSync(indexPath);
