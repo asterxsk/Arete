@@ -1,4 +1,10 @@
 <div align="center">
+  <pre>
+ ▝██████████▘
+   ██    ██
+   ██    ██
+  ▄██    ██▄
+  </pre>
   <h1>Arete</h1>
   <p><strong>A powerful, modular collection of extensions for the Pi Agent</strong></p>
   
@@ -9,19 +15,19 @@
 
 ---
 
-## <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-24.svg" width="20" height="20" alt="Overview Icon" /> Overview
+## <img src="https://api.iconify.design/octicon/book-24.svg?color=white" width="20" height="20" alt="Overview Icon" /> Overview
 
 **Arete** supercharges your Pi Agent with a suite of advanced capabilities, rich UI components, and background orchestrations. Designed with strict modularity in mind, every extension is fully self-contained yet seamlessly integrates to build a cohesive, powerful coding assistant environment.
 
-## <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/star-24.svg" width="20" height="20" alt="Features Icon" /> Key Features
+## <img src="https://api.iconify.design/octicon/star-24.svg?color=white" width="20" height="20" alt="Features Icon" /> Key Features
 
-*   <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-dependencies-16.svg" width="16" height="16" /> **Strict Modularity**: Extensions live in independent folders. Add or delete them at will—if an extension is missing, peer extensions gracefully degrade without crashing the agent.
-*   <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/cpu-16.svg" width="16" height="16" /> **LLM Awareness**: Arete dynamically injects its loaded capabilities into `globalThis.__pi_extension_features`, ensuring the LLM always knows exactly what tools and features are available.
-*   <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/globe-16.svg" width="16" height="16" /> **Global State Bridges**: Extensions share runtime data safely across boundaries, keeping states synchronized completely independently of the main thread.
-*   <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/paintbrush-16.svg" width="16" height="16" /> **Shared UI Primitives**: Extensions independently register UI components (headers, footers, widgets) to create a beautiful, unified Terminal User Interface (TUI).
-*   <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="16" height="16" /> **Built-in Auto Updater**: Arete tracks its own version. When a new update is pushed to GitHub, your header will notify you, and a simple `/update` command will seamlessly pull the latest features.
+*   <img src="https://api.iconify.design/octicon/package-dependencies-16.svg?color=white" width="16" height="16" /> **Strict Modularity**: Extensions live in independent folders. Add or delete them at will—if an extension is missing, peer extensions gracefully degrade without crashing the agent.
+*   <img src="https://api.iconify.design/octicon/cpu-16.svg?color=white" width="16" height="16" /> **LLM Awareness**: Arete dynamically injects its loaded capabilities into `globalThis.__pi_extension_features`, ensuring the LLM always knows exactly what tools and features are available.
+*   <img src="https://api.iconify.design/octicon/globe-16.svg?color=white" width="16" height="16" /> **Global State Bridges**: Extensions share runtime data safely across boundaries, keeping states synchronized completely independently of the main thread.
+*   <img src="https://api.iconify.design/octicon/paintbrush-16.svg?color=white" width="16" height="16" /> **Shared UI Primitives**: Extensions independently register UI components (headers, footers, widgets) to create a beautiful, unified Terminal User Interface (TUI).
+*   <img src="https://api.iconify.design/octicon/sync-16.svg?color=white" width="16" height="16" /> **Built-in Auto Updater**: Arete tracks its own version. When a new update is pushed to GitHub, your header will notify you, and a simple `/update` command will seamlessly pull the latest features.
 
-## <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-24.svg" width="20" height="20" alt="Extensions Icon" /> Included Extensions
+## <img src="https://api.iconify.design/octicon/package-24.svg?color=white" width="20" height="20" alt="Extensions Icon" /> Included Extensions
 
 Arete comes packed with a robust toolkit. Some highlights include:
 
@@ -31,7 +37,7 @@ Arete comes packed with a robust toolkit. Some highlights include:
 *   **`pi-hermes-memory`**: Advanced contextual memory injection.
 *   **`video-extract`**, **`tasks`**, **`timers`**, **`todo`**, **`compactui`**, and many more!
 
-## <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/download-24.svg" width="20" height="20" alt="Download Icon" /> Installation & Quickstart
+## <img src="https://api.iconify.design/octicon/download-24.svg?color=white" width="20" height="20" alt="Download Icon" /> Installation & Quickstart
 
 To install Arete into your local Pi Agent environment, simply clone it into your `~/.pi/agent` directory.
 
@@ -49,15 +55,11 @@ Add the following to your Pi `settings.json` (located at `~/.pi/settings.json`):
 
 ```json
 {
-  "defaultModel": "xiaomi/mimo-v2.5",
-  "defaultProvider": "commandcode",
   "retry": {
     "provider": { "timeoutMs": 600000 }
   },
-  "lastChangelogVersion": "0.80.2",
   "packages": [
     "npm:pi-web-access",
-    "npm:pi-hermes-memory"
   ],
   "hideThinkingBlock": false,
   "quietStartup": true,
@@ -84,7 +86,6 @@ To get the absolute most out of Arete, we recommend installing the following ext
 **Packages:**
 ```bash
 pi install npm:pi-web-access
-pi install npm:pi-hermes-memory
 ```
 
 **Skills:**
@@ -96,7 +97,7 @@ npx skills add https://github.com/nutlope/hallmark --skill hallmark
 npx skills add obra/superpowers
 ```
 
-## <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-24.svg" width="20" height="20" alt="Terminal Icon" /> Usage
+## <img src="https://api.iconify.design/octicon/terminal-24.svg?color=white" width="20" height="20" alt="Terminal Icon" /> Usage
 
 Arete extensions register custom slash commands directly into Pi's chat interface. 
 
