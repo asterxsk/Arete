@@ -53,6 +53,7 @@ interface TimerStats {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const GREEN = "\x1b[32m";
+const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 const STATUS_ICONS: Record<TimerStatus, string> = {
@@ -195,7 +196,7 @@ function formatStatsSummary(): string {
 
 // ── Timer setup helpers ────────────────────────────────────────────────
 
-function setupOneShotTimer(t: TimerEntry, ctx?: any): void {
+function setupOneShotTimer(t: TimerEntry, ctx?: any, timerCondition?: string): void {
 	const ms = Math.max(0, t.durationMs - (Date.now() - t.startedAt));
 	t.timeoutId = setTimeout(() => {
 		// Inject a user message to wake the LLM up
@@ -214,6 +215,25 @@ function setupOneShotTimer(t: TimerEntry, ctx?: any): void {
 		if (idx >= 0) timers.splice(idx, 1);
 		persistState();
 	}, ms);
+
+	// TimerCondition: if set to a task ID, cancel this timer when that task completes
+	if (timerCondition && timerCondition !== "never") {
+		const registerListener = (globalThis as any).__pi_task_on_complete as
+			((fn: (taskId: string, status: string, exitCode: number | undefined) => void) => () => void) | undefined;
+		if (registerListener) {
+			const unsubscribe = registerListener((taskId, _status, _exitCode) => {
+				const shouldCancel = timerCondition === "any" || taskId === timerCondition;
+				if (shouldCancel) {
+					// Task finished before timer — cancel the timer
+					if (t.timeoutId) clearTimeout(t.timeoutId);
+					const idx = timers.indexOf(t);
+					if (idx >= 0) timers.splice(idx, 1);
+					unsubscribe();
+					persistState();
+				}
+			});
+		}
+	}
 }
 
 function setupRepeatingTimer(t: TimerEntry, intervalMs: number, ctx?: any): void {
@@ -521,7 +541,7 @@ export default function (pi: ExtensionAPI) {
 					startedAt: Date.now(),
 				};
 				timers.push(entry);
-				setupOneShotTimer(entry, ctx);
+				setupOneShotTimer(entry, ctx, TimerCondition);
 				refresh();
 				return {
 					content: formatWithNotification(` Timer #${timerId} set for ${formatDuration(Math.round(duration))}: ${Prompt}`),
@@ -542,7 +562,7 @@ export default function (pi: ExtensionAPI) {
 			};
 			};
 			const res = await _execute();
-			res.details = { ...(res.details || {}), _callArgs: params };
+			(res as any).details = { ...(res.details || {}), _callArgs: params };
 			return res;
 		},
 	};

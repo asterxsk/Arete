@@ -1,11 +1,11 @@
-# prompt
+# system-it
 
 ## Purpose
-Injects custom system prompt instructions into the agent's context — sets PowerShell as default shell, enforces todo tracking, async workflows, questions tool usage, and Nerd Font icons.
+Injects custom system prompt instructions into the agent's context — sets PowerShell as default shell, enforces todo tracking, async workflows, questions tool usage, Nerd Font icons, and guidelines for plan mode tools (enter_plan and exit_plan).
 
 ## Ownership
 - System prompt augmentation via `before_agent_start` event
-- Custom instruction text (shell preference, task tracking, task clearing, async workflows, questions tool, visual styling)
+- Custom instruction text (shell preference, task tracking, task clearing, async workflows, questions tool, visual styling, plan mode)
 
 ## Local Contracts
 - **ExtensionAPI hooks**: `before_agent_start` — returns `{ systemPrompt: augmented }`

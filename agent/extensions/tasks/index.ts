@@ -80,6 +80,7 @@ const BRIDGE_KEY = "__pi_task_state";
 // ── State ──────────────────────────────────────────────────────────────
 
 let tasks: TaskEntry[] = [];
+let piApi: { sendUserMessage: (text: string, opts?: { deliverAs: string }) => Promise<void> | void } | null = null;
 
 // ── Persistence ────────────────────────────────────────────────────────
 
@@ -103,6 +104,38 @@ function restoreState(): void {
 	} catch {
 		tasks = [];
 	}
+}
+
+// ── Task completion bridge ─────────────────────────────────────────────
+// Allows other extensions (e.g. timers) to listen for task completions
+// without importing this extension directly.
+type TaskCompletionListener = (taskId: string, status: TaskStatus, exitCode: number | undefined) => void;
+const taskCompletionListeners: TaskCompletionListener[] = [];
+
+function notifyTaskCompletion(taskId: string, status: TaskStatus, exitCode: number | undefined): void {
+	// Notify the agent via user message injection
+	if (piApi?.sendUserMessage && status !== "cancelled") {
+		const icon = exitCode === 0 ? "" : "";
+		const msg = `${icon} Task ${taskId} finished (exit ${exitCode})`;
+		try {
+			const result = piApi.sendUserMessage(msg, { deliverAs: "nextTurn" });
+			if (result && typeof result.then === "function") {
+				result.catch(() => {});
+			}
+		} catch {}
+	}
+	// Notify any registered listeners (e.g. timers for TimerCondition)
+	for (const listener of taskCompletionListeners) {
+		try { listener(taskId, status, exitCode); } catch {}
+	}
+}
+
+function registerTaskCompletionListener(fn: TaskCompletionListener): () => void {
+	taskCompletionListeners.push(fn);
+	return () => {
+		const idx = taskCompletionListeners.indexOf(fn);
+		if (idx >= 0) taskCompletionListeners.splice(idx, 1);
+	};
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -263,6 +296,8 @@ function startTask(command: string, label: string, cwd: string, ctx?: any): Task
 			}
 			entry.proc = undefined;
 
+			notifyTaskCompletion(taskId, entry.status, exitCode ?? undefined);
+
 			if (entry.status !== "cancelled" && ctx?.hasUI) {
 				const icon = exitCode === 0 ? "" : "";
 				ctx.ui.notify(
@@ -281,6 +316,8 @@ function startTask(command: string, label: string, cwd: string, ctx?: any): Task
 			entry.completedAt = Date.now();
 			entry.status = "failed";
 			entry.proc = undefined;
+
+			notifyTaskCompletion(taskId, "failed", -1);
 
 			if (ctx?.hasUI) {
 				ctx.ui.notify(` ${taskId} error: ${truncate(err.message, 60)}`, "warning");
@@ -363,6 +400,11 @@ async function waitForTask(id: string, timeoutSec: number): Promise<TaskEntry | 
 // ── Extension entry ────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	piApi = pi;
+
+	// Expose task completion listener bridge for other extensions (e.g. timers)
+	(globalThis as any).__pi_task_on_complete = registerTaskCompletionListener;
+
 	// Self-register in global feature registry
 	(globalThis as any).__pi_extension_features?.push({
 		name: "tasks",
@@ -669,7 +711,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			};
 			const res = await _execute();
-			res.details = { ...(res.details || {}), _callArgs: params };
+			(res as any).details = { ...(res.details || {}), _callArgs: params };
 			return res;
 		},
 	};

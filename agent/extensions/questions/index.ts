@@ -60,6 +60,7 @@ interface QuestionInput {
 	sketch?: string;
 	options?: QuestionOptionInput[];
 	isMultiSelect?: boolean;
+	allowWriteIn?: boolean;
 }
 
 interface QuestionOption {
@@ -75,6 +76,7 @@ interface Question {
 	sketch?: string;
 	options: QuestionOption[];
 	isMultiSelect?: boolean;
+	allowWriteIn?: boolean;
 }
 
 type AnswerSource = "option" | "custom";
@@ -118,6 +120,7 @@ const QuestionSchema = Type.Object({
 		description: "Provide at least 2 preset options for multiple choice. Omit for open-ended questions. The UI appends 'Type your own answer' as last option.",
 	})),
 	isMultiSelect: Type.Optional(Type.Boolean({ description: "Set to true ONLY if the user can select multiple options simultaneously." })),
+	allowWriteIn: Type.Optional(Type.Boolean({ description: "If false, removes the 'Type your own answer' fallback option. Default is true." })),
 });
 
 const QuestionsParams = Type.Object({
@@ -148,6 +151,7 @@ function buildQuestions(questions: QuestionInput[]): Question[] {
 			description: opt.description,
 		})),
 		isMultiSelect: q.isMultiSelect,
+		allowWriteIn: q.allowWriteIn,
 	}));
 }
 
@@ -244,8 +248,10 @@ class QuestionsComponent {
 		if (!question) return [];
 		const opts: Array<QuestionOption & { isCustom?: boolean, isDone?: boolean }> = [
 			...question.options,
-			{ value: "__pi_custom_answer__", label: "Type your own answer", isCustom: true },
 		];
+		if (question.allowWriteIn !== false) {
+			opts.push({ value: "__pi_custom_answer__", label: "Type your own answer", isCustom: true });
+		}
 		return opts;
 	}
 

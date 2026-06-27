@@ -50,8 +50,9 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - `md-link/` — `/link-md`, `/unlink-md`, `/send-diff` — link a .md file for collaborative editing
 - `powershell/` — `powershell` tool (LLM-callable) with compactui-style rendering
 - `profile-switcher/` — `/profile` command — multi-account auth switching with OAuth and API key profiles
-- `prompt/` — Custom system instructions: shell preference, task tracking, caveman mode, no emojis
-- `questions/` — `questions` tool (multi-choice TUI with custom-answer fallback and ASCII sketches)
+- `instruct/` — Custom system instructions: shell preference, task tracking, no emojis, plan mode guidelines
+- `perms/` — Permissions manager and checklist (`/extensions`), plus plan mode (`/plan`, `plan` tool with strict disabling of `write`/`edit`/`bash` tools)
+- `questions/` — `questions` tool (multi-choice TUI with optional custom-answer fallback and ASCII sketches)
 - `spinner-phrases/` — Animated star spinner with orange glow effect and fun Claude Code-style phrases
 - `statusline/` — Footer status line (left to right): provider, model, context bar, file changes counts; auto-refreshes
 - `subagents/` — the `subagent` tool + `/sub` command: spawn isolated pi processes with predefined agent .md files; duration hidden while running

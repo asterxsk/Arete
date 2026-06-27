@@ -568,29 +568,28 @@ export default function (pi: ExtensionAPI) {
 
   if (!patchedAssistant) {
     try {
+        // Strip all native Spacers to strictly control spacing
         const originalUserRender = UserMessageComponent.prototype.render;
         UserMessageComponent.prototype.render = function(width: number) {
             const lines = originalUserRender.call(this, width);
-            return ["", ...lines, ""];
+            return ["", ...lines];
         };
         
-        // Remove the native Spacer(1) that InteractiveMode adds before user messages
         if (InteractiveMode && InteractiveMode.prototype.addMessageToChat && !(InteractiveMode.prototype.addMessageToChat as any).__compactui_patched) {
             const originalAdd = InteractiveMode.prototype.addMessageToChat;
             InteractiveMode.prototype.addMessageToChat = function(message: any, options?: any) {
-                const lenBefore = this.chatContainer.children.length;
-                originalAdd.call(this, message, options);
-                
-                if (message.role === "user") {
-                    const lenAfter = this.chatContainer.children.length;
-                    // If it added a Spacer followed by the UserMessageComponent, remove the Spacer
-                    if (lenAfter >= 2 && lenAfter > lenBefore + 1) {
-                        const secondToLast = this.chatContainer.children[lenAfter - 2];
-                        if (secondToLast && secondToLast.constructor.name === "Spacer") {
-                            this.chatContainer.children.splice(lenAfter - 2, 1);
-                        }
-                    }
+                const originalAddChild = this.chatContainer.addChild;
+                this.chatContainer.addChild = function(child: any) {
+                    if (child && child.constructor && child.constructor.name === "Spacer") return;
+                    return originalAddChild.apply(this, arguments);
+                };
+                let result;
+                try {
+                    result = originalAdd.call(this, message, options);
+                } finally {
+                    this.chatContainer.addChild = originalAddChild;
                 }
+                return result;
             };
             (InteractiveMode.prototype.addMessageToChat as any).__compactui_patched = true;
         }
@@ -602,6 +601,10 @@ export default function (pi: ExtensionAPI) {
             this.contentContainer.clear();
             const hasVisibleContent = message.content.some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
             
+            if (hasVisibleContent) {
+                this.contentContainer.addChild(line(""));
+            }
+
             let hasThinking = false;
             for (let i = 0; i < message.content.length; i++) {
                 const content = message.content[i];
@@ -714,7 +717,8 @@ export default function (pi: ExtensionAPI) {
                         // Force it to use the new renderers now that the definition is patched
                         this.updateDisplay();
                     }
-                    return originalRender.apply(this, arguments);
+                    const lines = originalRender.apply(this, arguments);
+                    return ["", ...lines];
                 };
                 ToolExecutionComponent.prototype.render.__compactui_patched = true;
             }
