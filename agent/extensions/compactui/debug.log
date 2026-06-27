@@ -1,7 +1,0 @@
-Patched instance registerTool: read
-Patched instance registerTool: write
-Patched instance registerTool: edit
-Patched instance registerTool: bash
-Patched instance registerTool: ls
-Patched instance registerTool: grep
-Patched instance registerTool: find
