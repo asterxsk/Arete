@@ -97,6 +97,7 @@ npx skills add https://github.com/juliusbrussee/caveman --skill caveman
 npx skills add https://github.com/mattpocock/skills --skill grill-me
 npx skills add https://github.com/nutlope/hallmark --skill hallmark
 npx skills add obra/superpowers
+npx skills add https://github.com/github/awesome-copilot --skill autoresearch
 ```
 
 ## <img src="https://api.iconify.design/octicon/terminal-24.svg?color=white" width="20" height="20" alt="Terminal Icon" /> Usage
