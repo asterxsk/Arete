@@ -5,6 +5,8 @@
 !.gitignore
 !AGENTS.md
 !README.md
+!install.sh
+!install.ps1
 !LICENSE
 !version.txt
 

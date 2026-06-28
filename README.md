@@ -33,36 +33,22 @@ Arete comes packed with a robust toolkit. Some highlights include:
 
 ## <img src="https://api.iconify.design/octicon/download-24.svg?color=white" width="20" height="20" alt="Download Icon" /> Installation & Quickstart
 
-To install Arete into your local Pi Agent environment, simply clone it into your Pi directory.
+To install Arete into your local Pi Agent environment, simply run the appropriate one-liner for your operating system. This will automatically back up your old agent config (preserving `node_modules`) and download the latest Arete features!
 
 ### 1. Windows
 
-Open PowerShell and run the following commands:
+Open PowerShell and run:
 
 ```powershell
-# 1. Backup your existing agent config (excluding node_modules)
-robocopy $HOME\.pi\agent $HOME\.pi\agent.bak /E /XD node_modules | Out-Null
-
-# 2. Delete the old agent folder so git can clone cleanly
-Remove-Item -Path $HOME\.pi\agent -Recurse -Force
-
-# 3. Clone Arete directly into your Pi directory
-git clone https://github.com/asterxsk/arete.git $HOME\.pi\agent
+irm https://raw.githubusercontent.com/asterxsk/arete/main/install.ps1 | iex
 ```
 
 ### 2. Linux and Mac
 
-Open your terminal and run the following commands:
+Open your terminal and run:
 
 ```bash
-# 1. Backup your existing agent config (excluding node_modules)
-rsync -a --exclude 'node_modules' ~/.pi/agent/ ~/.pi/agent.bak/
-
-# 2. Delete the old agent folder so git can clone cleanly
-rm -rf ~/.pi/agent
-
-# 3. Clone Arete directly into your Pi directory
-git clone https://github.com/asterxsk/arete.git ~/.pi/agent
+curl -sL https://raw.githubusercontent.com/asterxsk/arete/main/install.sh | bash
 ```
 
 ### Configuration
