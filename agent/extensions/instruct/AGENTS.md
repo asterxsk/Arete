@@ -9,13 +9,13 @@ Injects custom system prompt instructions into the agent's context — sets Powe
 
 ## Local Contracts
 - **ExtensionAPI hooks**: `before_agent_start` — returns `{ systemPrompt: augmented }`
+- **Commands**: `/instructions` — opens `prompt.md` in the user's default editor
 - **Prompt injection**: Appends `## Custom Instructions` block to existing system prompt
-- **No tools, no commands** — purely prompt modification
 
 ## Work Guidance
-- Instruction text is hardcoded in the event handler
+- Instruction text lives in `prompt.md` (loaded once at startup via `readFileSync`)
 - Append-only: never replaces the base system prompt, only adds to it
-- Changes to instructions require updating the string literal in `index.ts`
+- Changes to instructions require editing `prompt.md`, not `index.ts`
 - Keep instructions concise — they consume context tokens on every request
 
 ## Verification
