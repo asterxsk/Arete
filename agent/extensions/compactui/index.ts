@@ -641,6 +641,12 @@ export default function (pi: ExtensionAPI) {
     };
     
     tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
+      // Compact styled error for unknown tools (even when collapsed)
+      if ((result.details as any)?._isUnknownTool) {
+        const toolName = tool.name || (context.args as any)?.name || "unknown";
+        return line(INDENT + orange(theme, toolName) + " " + theme.fg("error", "tool not found"));
+      }
+      
       if (!opts.expanded) return noOp();
       
       const argsLine = Object.values(context.args || {}).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(" ");
@@ -966,7 +972,7 @@ export default function (pi: ExtensionAPI) {
   const unknownTools = new Set<string>();
 
   // ── Detect unknown tool names ───────────────────────────────────────
-  const KNOWN_TOOLS = new Set(["read", "write", "edit", "bash", "grep", "find", "ls", "web_search", "web_fetch", "run_command", "manage_task", "schedule", "subagent", "todo"]);
+  const KNOWN_TOOLS = new Set(["read", "write", "edit", "bash", "grep", "find", "ls", "web_search", "web_fetch", "fetch_content", "get_search_content", "run_command", "manage_task", "schedule", "subagent", "todo", "powershell", "questions", "video_extract", "skill_manage", "plan", "memory", "memory_search", "session_search"]);
   pi.on("tool_call", async (event) => {
     if (!KNOWN_TOOLS.has(event.toolName) && !unknownTools.has(event.toolName)) {
       unknownTools.add(event.toolName);

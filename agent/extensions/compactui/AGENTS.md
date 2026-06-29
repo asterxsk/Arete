@@ -17,12 +17,14 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Sets `__pi_betterui_enabled` global flag for other extensions
 - Exposes `__pi_patchTool` globally as fallback for fresh pi objects
 - Hooks: `tool_call` (unknown tool detection), `tool_result` (output truncation)
+- `KNOWN_TOOLS` set tracks all registered Pi tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `web_search`, `web_fetch`, `fetch_content`, `get_search_content`, `run_command`, `manage_task`, `schedule`, `subagent`, `todo`, `powershell`, `questions`, `video_extract`, `skill_manage`, `plan`, `memory`, `memory_search`, `session_search`
 
 ## Work Guidance
 - Context-aware spacing: adds empty line before user messages when previous message was assistant (not before tools within same turn)
 - Collapsed view shows two lines:
   1. `tool [args] (ctrl+o to expand)` — orange tool name, truncated args
   2. `⎿ summary (N lines)` — dimmed summary with line/task count (or `⎿ failed tool call` on error)
+- Unknown tool errors render as `toolName tool not found` with orange tool name and error-colored text (via `_isUnknownTool` flag)
 - Summary texts by tool:
   - `read`: "read tool output"
   - `write`: "file written"
