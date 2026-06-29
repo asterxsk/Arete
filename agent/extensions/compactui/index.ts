@@ -30,7 +30,7 @@ import { Type } from "typebox";
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const INDENT = " ";
+const INDENT = " "; // Single space indent for tools
 const HINT = " (ctrl+o to expand)";
 const MAX_LINES = 5;
 const TRUNCATED_TOOLS = new Set(["bash", "powershell", "run_command"]);
@@ -162,6 +162,44 @@ function formatDur(s: number): string {
   if (s < 60) return s.toFixed(1) + "s";
   return Math.floor(s / 60) + "m " + Math.floor(s % 60) + "s";
 }
+function wrapWithPrefix(rl: string, width: number): string[] {
+  const visible = rl.replace(/\x1b\[[0-9;]*m/g, "");
+  const match = visible.match(/^(\s*(?:│|└|\[)?\s*(?:\s*\d+\s*(?:│|\+|\-)?\s*)?)/);
+  if (!match || match[1].length === 0) return wrapTextWithAnsi(rl, width);
+  
+  const prefixLen = match[1].length;
+  let ansiPrefix = "";
+  let contentStr = "";
+  let visibleCount = 0;
+  let i = 0;
+  while (i < rl.length) {
+    if (rl[i] === '\x1b') {
+      const end = rl.indexOf('m', i);
+      if (end !== -1) {
+        if (visibleCount < prefixLen) ansiPrefix += rl.slice(i, end + 1);
+        else contentStr += rl.slice(i, end + 1);
+        i = end + 1;
+        continue;
+      }
+    }
+    if (visibleCount < prefixLen) ansiPrefix += rl[i];
+    else contentStr += rl[i];
+    visibleCount++;
+    i++;
+  }
+  
+  const contentWidth = Math.max(10, width - prefixLen);
+  const wrappedContent = wrapTextWithAnsi(contentStr, contentWidth);
+  if (wrappedContent.length === 0) return [ansiPrefix];
+  
+  const result = [ansiPrefix + wrappedContent[0]];
+  const subsequentPrefixStr = match[1].replace(/[^\s│]/g, " ");
+  for (let j = 1; j < wrappedContent.length; j++) {
+    result.push(subsequentPrefixStr + wrappedContent[j]);
+  }
+  return result;
+}
+
 
 function expandedBox(theme: any, headerName: string, argsLine: string, lines: string[], durationS: number, limit: number): Component {
   const show = lines.slice(0, limit);
@@ -182,16 +220,43 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
   // Footer with duration
   if (durationS >= 0) {
     raw.push(INDENT + padding + "└ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+  } else {
+    raw.push(INDENT + padding + "└ " + theme.fg("dim", "[ctrl+o to hide]"));
+  }
+  
+  // Store plain text version for copy/paste
+  const plainTextLines = [headerName + " [" + argsLine + "]"];
+  for (const line of show) {
+    plainTextLines.push(line);
+  }
+  if (hasMore) {
+    plainTextLines.push("... " + (lines.length - limit) + " more");
+  }
+  if (durationS >= 0) {
+    plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
+  } else {
+    plainTextLines.push("[ctrl+o to hide]");
+  }
+  
+  (raw as any)._plainText = plainTextLines.join("\n");
+
+  class GenericComponent {
+    constructor(private renderFn: (width: number) => string[]) {}
+    render(width: number): string[] {
+      try { return this.renderFn(width); } catch (e: any) { return [`\x1b[31mError rendering: ${e.message}\x1b[39m`]; }
+    }
+    invalidate() {}
+    handleInput() {}
   }
 
-  return {
-    render(width) {
+  return new GenericComponent((width: number) => {
       const result: string[] = [];
       const headerPrefix = INDENT + orange(theme, headerName) + " [";
       const headerPrefixWidth = INDENT.length + headerName.length + 2;
       const argsWidth = Math.max(10, width - headerPrefixWidth - 1);
       
-      const wrappedArgs = wrapTextWithAnsi(argsLine, argsWidth);
+      const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
+      const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
       if (wrappedArgs.length === 0) {
         result.push(headerPrefix + "]");
       } else {
@@ -210,21 +275,30 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
       for (const rl of raw) {
         if (!rl) result.push("");
         else if (visibleWidth(rl) <= width) result.push(rl);
-        else result.push(truncateToWidth(rl, width, "..."));
+        else result.push(...wrapWithPrefix(rl, width));
       }
       return result;
-    },
-    invalidate() {},
-  };
+  });
 }
 
 function colorizeDiffLine(theme: any, line: string): string {
-  if (line.startsWith("+")) {
-    return "\x1b[48;2;30;100;30m\x1b[38;2;120;220;120m" + line + "\x1b[0m";
+  const match = line.match(/^([\+\- ]?)\s*(\d+)(.*)$/);
+  if (match) {
+    const sign = match[1] || " ";
+    const num = match[2].padStart(4, " ");
+    const rest = match[3];
+    
+    if (sign === '+') {
+      const greenText = "\x1b[38;2;120;220;120m";
+      return `\x1b[97m${num} ${greenText}+${rest}\x1b[39m`;
+    }
+    if (sign === '-') {
+      const redText = "\x1b[38;2;220;120;120m";
+      return `\x1b[97m${num} ${redText}-${rest}\x1b[39m`;
+    }
+    return `\x1b[97m${num}   \x1b[39m${rest}`;
   }
-  if (line.startsWith("-")) {
-    return "\x1b[48;2;100;30;30m\x1b[38;2;220;120;120m" + line + "\x1b[0m";
-  }
+  
   return theme.fg("text", line);
 }
 
@@ -247,16 +321,43 @@ function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines
   // Footer with duration
   if (durationS >= 0) {
     raw.push(INDENT + padding + "└ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+  } else {
+    raw.push(INDENT + padding + "└ " + theme.fg("dim", "[ctrl+o to hide]"));
+  }
+  
+  // Store plain text version for copy/paste
+  const plainTextLines = [headerName + " [" + argsLine + "]"];
+  for (const line of show) {
+    plainTextLines.push(line);
+  }
+  if (hasMore) {
+    plainTextLines.push("... " + (lines.length - limit) + " more");
+  }
+  if (durationS >= 0) {
+    plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
+  } else {
+    plainTextLines.push("[ctrl+o to hide]");
+  }
+  
+  (raw as any)._plainText = plainTextLines.join("\n");
+
+  class GenericComponent {
+    constructor(private renderFn: (width: number) => string[]) {}
+    render(width: number): string[] {
+      try { return this.renderFn(width); } catch (e: any) { return [`\x1b[31mError rendering: ${e.message}\x1b[39m`]; }
+    }
+    invalidate() {}
+    handleInput() {}
   }
 
-  return {
-    render(width) {
+  return new GenericComponent((width: number) => {
       const result: string[] = [];
       const headerPrefix = INDENT + orange(theme, headerName) + " [";
       const headerPrefixWidth = INDENT.length + headerName.length + 2;
       const argsWidth = Math.max(10, width - headerPrefixWidth - 1);
       
-      const wrappedArgs = wrapTextWithAnsi(argsLine, argsWidth);
+      const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
+      const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
       if (wrappedArgs.length === 0) {
         result.push(headerPrefix + "]");
       } else {
@@ -271,16 +372,13 @@ function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines
           }
         }
       }
-
       for (const rl of raw) {
         if (!rl) result.push("");
         else if (visibleWidth(rl) <= width) result.push(rl);
-        else result.push(truncateToWidth(rl, width, "..."));
+        else result.push(...wrapWithPrefix(rl, width));
       }
       return result;
-    },
-    invalidate() {},
-  };
+  });
 }
 
 // Capture full output in details for tools that need it
@@ -375,7 +473,7 @@ export default function (pi: ExtensionAPI) {
       tool.renderShell = "self";
       tool.renderCall = (args: any, theme: any, context: any) => {
         if (context.expanded) return noOp();
-        return compactCall("pwsh", args.command ?? "?", theme);
+        return compactCall("powershell", args.command ?? "?", theme);
       };
       tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
         const details = result.details as Record<string, unknown> | undefined;
@@ -386,7 +484,24 @@ export default function (pi: ExtensionAPI) {
           return compactSummary(theme, "read terminal output", lines.length, "line");
         }
         const durationS = (details?._durationS as number) ?? -1;
-        return expandedBox(theme, "pwsh", context.args.command ?? "", lines, durationS, 50);
+        
+        // Create a plain text version for copy/paste with extra space before │
+        const plainTextLines = ["powershell [" + (context.args.command ?? "?") + "]"];
+        for (const line of lines) {
+          plainTextLines.push(line.startsWith("│") ? " " + line : line);
+        }
+        if (durationS >= 0) {
+          plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
+        } else {
+          plainTextLines.push("[ctrl+o to hide]");
+        }
+        (result as any)._plainText = plainTextLines.join("\n");
+        
+        // Create a custom component specifically for powershell that adds space before │
+        // First, process the lines to add space before │
+        const processedLines = lines.map(line => line.startsWith("│") ? " "+ line : line);
+        
+        return expandedBox(theme, "powershell", context.args.command ?? "", processedLines, durationS, 50);
       };
       return;
     }
@@ -546,7 +661,6 @@ export default function (pi: ExtensionAPI) {
   // Patch the instance's registerTool
   const origRegister = pi.registerTool.bind(pi);
   pi.registerTool = (tool: any) => {
-    require('fs').appendFileSync('C:/Users/prithish/.pi/agent/extensions/compactui/debug.log', `Patched instance registerTool: ${tool.name}\n`);
     patchTool(tool);
     origRegister(tool);
   };
@@ -557,7 +671,6 @@ export default function (pi: ExtensionAPI) {
     (proto as any).__compactui_patched_register = true;
     const origProtoRegister = proto.registerTool;
     proto.registerTool = function(tool: any) {
-      require('fs').appendFileSync('C:/Users/prithish/.pi/agent/extensions/compactui/debug.log', `Patched proto registerTool: ${tool.name}\n`);
       patchTool(tool);
       return origProtoRegister.call(this, tool);
     };
@@ -568,18 +681,29 @@ export default function (pi: ExtensionAPI) {
 
   if (!patchedAssistant) {
     try {
-        // Strip all native Spacers to strictly control spacing
         const originalUserRender = UserMessageComponent.prototype.render;
-        UserMessageComponent.prototype.render = function(width: number) {
-            const lines = originalUserRender.call(this, width);
-            return ["", ...lines];
-        };
+          UserMessageComponent.prototype.render = function(width: number) {
+              const lines = originalUserRender.call(this, width);
+              return lines;
+          };
         
+        // Track last message type for context-aware spacing
+        let lastMessageRole: string | null = null;
+
         if (InteractiveMode && InteractiveMode.prototype.addMessageToChat && !(InteractiveMode.prototype.addMessageToChat as any).__compactui_patched) {
             const originalAdd = InteractiveMode.prototype.addMessageToChat;
             InteractiveMode.prototype.addMessageToChat = function(message: any, options?: any) {
+                // Add spacing before user message if previous was assistant
+                if (message.role === "user" && lastMessageRole === "assistant") {
+                    this.chatContainer.addChild(line(""));
+                }
+                
+                // Track message role
+                lastMessageRole = message.role;
+                
                 const originalAddChild = this.chatContainer.addChild;
                 this.chatContainer.addChild = function(child: any) {
+                    // Block native Spacers to prevent double-spacing
                     if (child && child.constructor && child.constructor.name === "Spacer") return;
                     return originalAddChild.apply(this, arguments);
                 };
@@ -594,16 +718,10 @@ export default function (pi: ExtensionAPI) {
             (InteractiveMode.prototype.addMessageToChat as any).__compactui_patched = true;
         }
 
-        const originalAssistantRender = AssistantMessageComponent.prototype.render;
-
         AssistantMessageComponent.prototype.updateContent = function(message: any) {
             this.lastMessage = message;
             this.contentContainer.clear();
-            const hasVisibleContent = message.content.some((c: any) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
-            
-            if (hasVisibleContent) {
-                this.contentContainer.addChild(line(""));
-            }
+
 
             let hasThinking = false;
             for (let i = 0; i < message.content.length; i++) {
@@ -706,9 +824,9 @@ export default function (pi: ExtensionAPI) {
                         }
                     }
                     
-                    // Remove native Spacer(1) at the top if this is a hidden tool like 'todo'
-                    if (this.toolName === "todo" || this.toolName === "manage_todo") {
-                        if (this.children && this.children.length > 0 && this.children[0].constructor.name === "Spacer") {
+                    // Remove native Spacers at the top of tool components
+                    if (this.children && this.children.length > 0) {
+                        while (this.children.length > 0 && this.children[0].constructor.name === "Spacer") {
                             this.children.shift();
                         }
                     }
@@ -718,7 +836,11 @@ export default function (pi: ExtensionAPI) {
                         this.updateDisplay();
                     }
                     const lines = originalRender.apply(this, arguments);
-                    return ["", ...lines];
+                    // Strip leading empty lines to move tools left
+                    while (lines.length > 0 && lines[0].trim() === "") {
+                        lines.shift();
+                    }
+                    return lines;
                 };
                 ToolExecutionComponent.prototype.render.__compactui_patched = true;
             }
@@ -727,9 +849,8 @@ export default function (pi: ExtensionAPI) {
             InteractiveMode.prototype.syncMessages = function() {
                 const originalAddChild = this.chatContainer.addChild;
                 this.chatContainer.addChild = function(child: any) {
-                    if (child && child.constructor && child.constructor.name === "Spacer") {
-                        return; // Remove all spacers between messages for compact UI
-                    }
+                    // Block native Spacers to prevent double-spacing
+                    if (child && child.constructor && child.constructor.name === "Spacer") return;
                     return originalAddChild.apply(this, arguments);
                 };
                 
@@ -950,7 +1071,13 @@ export default function (pi: ExtensionAPI) {
       const offset = (context.args.offset as number) || 1;
       const endLine = offset + lineCount - 1;
       const label = lineCount > 0 ? `${offset}-${endLine}, ${filePath}` : filePath;
-      return expandedBox(theme, "read", label, lines, durationS, 40);
+      
+      const numberedLines = lines.map((line, i) => {
+        const num = String(offset + i).padStart(4, " ");
+        return `${num}  ${line}`;
+      });
+      
+      return expandedBox(theme, "read", label, numberedLines, durationS, 40);
     },
   });
 
@@ -983,7 +1110,13 @@ export default function (pi: ExtensionAPI) {
 
       const durationS = (details?._durationS as number) ?? -1;
       const filePath = context.args.path ?? "?";
-      return expandedBox(theme, "write", filePath, lines, durationS, 40);
+      
+      const numberedLines = lines.map((line, i) => {
+        const num = String(i + 1).padStart(4, " ");
+        return `${num}  ${line}`;
+      });
+      
+      return expandedBox(theme, "write", filePath, numberedLines, durationS, 40);
     },
   });
 
@@ -1018,6 +1151,19 @@ export default function (pi: ExtensionAPI) {
       }
 
       const durationS = (result.details as Record<string, unknown>)?._durationS as number ?? -1;
+      
+      // Create a plain text version for copy/paste
+      const plainTextLines = ["edit [" + (context.args.path ?? "?") + "]"];
+      for (const line of diffLines) {
+        plainTextLines.push(line);
+      }
+      if (durationS >= 0) {
+        plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
+      } else {
+        plainTextLines.push("[ctrl+o to hide]");
+      }
+      (result as any)._plainText = plainTextLines.join("\n");
+      
       return diffExpandedBox(theme, "edit", context.args.path ?? "", diffLines, durationS, 50);
     },
   });

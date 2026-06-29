@@ -43,8 +43,8 @@ const PHRASES: string[] = [
 	"Coalescing", "Crystallizing", "Incubating", "Fermenting", "Simmering",
 	"Marinating", "Perambulating", "Gallivanting", "Frolicking", "Vibing",
 	"Quantumizing", "Reticulating", "Spelunking", "Wrangling", "Bootstrapping",
-	"Generating", "Contemplating", "Philosophising", "Prestidigitating",
-	"Transmuting", "Levitationing", "Moonwalking", "Beboppin'", "Jitterbugging",
+	"Generating", "Contemplating", "Philosophizing", "Prestidigitating",
+	"Transmuting", "Levitating", "Moonwalking", "Beboppin'", "Jitterbugging",
 	"Flibbertigibbeting", "Shenaniganing", "Whatchamacalliting", "Discombobulating",
 	"Recombobulating", "Actualizing", "Envisioning", "Imagining", "Cerebrating",
 	"Ideating", "Hatching", "Pollinating", "Germinating", "Sprouting", "Noodling",
@@ -226,6 +226,29 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event: any, ctx: any) => {
 		if (ctx.hasUI) {
 			currentCtx = ctx;
+			
+			// Intercept calls to setWorkingMessage to catch API error resets
+			const origSetWorkingMessage = ctx.ui.setWorkingMessage;
+			ctx.ui.setWorkingMessage = function(msg: string | undefined) {
+				if (msg === "Working...") {
+					// The core agent is resetting to default (likely after an API error)
+					// We should restart our custom spinner
+					setTimeout(() => {
+						if (currentCtx) start(currentCtx);
+					}, 0);
+					return;
+				}
+				return origSetWorkingMessage.apply(this, arguments);
+			};
+			
+			const origSetWorkingIndicator = ctx.ui.setWorkingIndicator;
+			ctx.ui.setWorkingIndicator = function(indicator: any) {
+				if (intervalId !== null && indicator !== undefined && indicator.frames?.length > 0) {
+					// Ignore the core agent trying to set a default spinner while ours is running
+					return;
+				}
+				return origSetWorkingIndicator.apply(this, arguments);
+			};
 		}
 	});
 

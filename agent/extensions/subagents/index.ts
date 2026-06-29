@@ -660,6 +660,7 @@ class SubagentAutocompleteComponent {
 	private selectedIdx = 0;
 	private lastInputValue = "";
 	public onDone: ((result: string | null) => void) | undefined;
+	private currentModel: string;
 
 	constructor(
 		private readonly tui: { requestRender: () => void },
@@ -669,7 +670,9 @@ class SubagentAutocompleteComponent {
 		},
 		initialValue: string,
 		modelRegistry?: ModelRegistry,
+		currentModel?: string,
 	) {
+		this.currentModel = currentModel || "";
 		this.allModels = loadSuggestions(modelRegistry);
 		this.input = new Input();
 		this.input.setValue(initialValue);
@@ -744,13 +747,20 @@ class SubagentAutocompleteComponent {
 		const arrow = this.theme.fg("accent", "─".repeat(Math.max(0, width - 1)));
 
 		add(arrow);
-		add(this.theme.fg("accent", this.theme.bold(" Subagent Model")));
+		const title = this.currentModel 
+			? this.theme.fg("accent", this.theme.bold(` Subagent Model: ${this.currentModel}`))
+			: this.theme.fg("accent", this.theme.bold(" Subagent Model"));
+		add(title);
 		lines.push("");
 
 		// Input field
-		const inputLines = this.input.render(Math.max(8, width - 4));
-		for (const line of inputLines) {
-			add(` ${line}`);
+		if (this.input.value) {
+			const inputLines = this.input.render(Math.max(8, width - 4));
+			for (const line of inputLines) {
+				add(` ${line}`);
+			}
+		} else {
+			add(`> ${this.theme.fg("dim", "Type to search model...")}`);
 		}
 
 		// Suggestions
@@ -810,7 +820,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("sub", {
 		description: "Set model for subagents. /sub <model> to set, /sub alone opens interactive picker.",
 		handler: async (_args, ctx) => {
-			const current = getSubagentModel() || "auto";
+			const current = getSubagentModel() || "";
 			const args = typeof _args === "string" ? _args.trim() : "";
 
 			if (args) {
@@ -833,7 +843,7 @@ export default function (pi: ExtensionAPI) {
 			// Interactive mode: open autocomplete dialog
 			while (true) {
 				const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-					const component = new SubagentAutocompleteComponent(tui, theme, current, ctx.modelRegistry);
+					const component = new SubagentAutocompleteComponent(tui, theme, "", ctx.modelRegistry, current);
 					component.onDone = done;
 					component.focused = true;
 					return component;

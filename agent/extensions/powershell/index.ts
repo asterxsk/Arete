@@ -1,10 +1,10 @@
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
 
 // ── Compact UI helpers (matches compactui style) ─────────────────────
-const INDENT = " ";
+const INDENT = "";
 const HINT = " (ctrl+o to expand)";
 
 function compactLine(text: string): Component {
@@ -40,6 +40,44 @@ function formatDur(s: number): string {
 	return Math.floor(s / 60) + "m " + Math.floor(s % 60) + "s";
 }
 
+function wrapWithPrefix(rl: string, width: number): string[] {
+	const visible = rl.replace(/\x1b\[[0-9;]*m/g, "");
+	const match = visible.match(/^(\s*(?:│|└|\[)?\s*(?:\s*\d+\s*(?:│|\+|\-)?\s*)?)/);
+	if (!match || match[1].length === 0) return wrapTextWithAnsi(rl, width);
+
+	const prefixLen = match[1].length;
+	let ansiPrefix = "";
+	let contentStr = "";
+	let visibleCount = 0;
+	let i = 0;
+	while (i < rl.length) {
+		if (rl[i] === '\x1b') {
+			const end = rl.indexOf('m', i);
+			if (end !== -1) {
+				if (visibleCount < prefixLen) ansiPrefix += rl.slice(i, end + 1);
+				else contentStr += rl.slice(i, end + 1);
+				i = end + 1;
+				continue;
+			}
+		}
+		if (visibleCount < prefixLen) ansiPrefix += rl[i];
+		else contentStr += rl[i];
+		visibleCount++;
+		i++;
+	}
+
+	const contentWidth = Math.max(10, width - prefixLen);
+	const wrappedContent = wrapTextWithAnsi(contentStr, contentWidth);
+	if (wrappedContent.length === 0) return [ansiPrefix];
+
+	const result = [ansiPrefix + wrappedContent[0]];
+	const subsequentPrefixStr = match[1].replace(/[^\s│]/g, " ");
+	for (let j = 1; j < wrappedContent.length; j++) {
+		result.push(subsequentPrefixStr + wrappedContent[j]);
+	}
+	return result;
+}
+
 function expandedBox(theme: any, headerName: string, argsLine: string, lines: string[], durationS: number, limit: number): Component {
 	const show = lines.slice(0, limit);
 	const hasMore = lines.length > limit;
@@ -49,7 +87,8 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 	raw.push(INDENT + orange(theme, headerName) + " [" + argsLine + "]");
 
 	// Output lines with │ prefix aligned under [
-	const CONTENT_INDENT = "    │ ";
+	const padding = " ".repeat(headerName.length + 1);
+	const CONTENT_INDENT = padding + "│ ";
 	for (const line of show) {
 		raw.push(INDENT + CONTENT_INDENT + theme.fg("text", line));
 	}
@@ -60,7 +99,7 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 
 	// Footer with duration
 	if (durationS >= 0) {
-		raw.push(INDENT + "    └ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+		raw.push(INDENT + padding + "└ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
 	}
 
 	return {
@@ -69,7 +108,9 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 			for (const rl of raw) {
 				if (!rl) result.push("");
 				else if (visibleWidth(rl) <= width) result.push(rl);
-				else result.push(truncateToWidth(rl, width, "..."));
+				else {
+					result.push(...wrapWithPrefix(rl, width));
+				}
 			}
 			return result;
 		},
@@ -151,7 +192,7 @@ export default function (pi: ExtensionAPI) {
 
 		renderCall(args, theme, context) {
 			if (context.expanded) return noOp();
-			return compactCall("pwsh", args.command ?? "?", theme);
+			return compactCall("powershell", args.command ?? "?", theme);
 		},
 
 		renderResult(result, { expanded, isPartial }, theme, _context) {
@@ -160,9 +201,10 @@ export default function (pi: ExtensionAPI) {
 			const details = result.details as Record<string, unknown> | undefined;
 			const full = (details?._fullOutput as string) || result.content?.[0]?.text || "";
 			if (!expanded) return noOp();
+
 			const lines = full.split("\n");
 			const durationS = (details?._durationS as number) ?? -1;
-			return expandedBox(theme, "pwsh", _context.args.command || "", lines, durationS, 50);
+			return expandedBox(theme, "powershell", _context.args.command || "", lines, durationS, 50);
 		},
 	});
 }

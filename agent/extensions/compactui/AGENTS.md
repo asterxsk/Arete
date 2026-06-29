@@ -8,6 +8,7 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Output truncation for bash/powershell/run_command (5-line limit)
 - Thinking block styling and assistant message layout
 - `ThinkingBlock` component for collapsed thinking display
+- Message spacing: controlled spacing after assistant messages, removed native Spacers above tools
 
 ## Local Contracts
 - Patches tools: `read`, `write`, `edit`, `bash`, `ls`, `grep`, `find` (via explicit re-registration)
@@ -18,6 +19,7 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Hooks: `tool_call` (unknown tool detection), `tool_result` (output truncation)
 
 ## Work Guidance
+- Context-aware spacing: adds empty line before user messages when previous message was assistant (not before tools within same turn)
 - Collapsed view shows two lines:
   1. `tool [args] (ctrl+o to expand)` — orange tool name, truncated args
   2. `⎿ summary (N lines)` — dimmed summary with line/task count (or `⎿ failed tool call` on error)
@@ -40,6 +42,8 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Press ctrl+o — verify expanded view with output
 - Run bash with >5 lines output — verify truncation message
 - Verify thinking blocks render with proper styling
+- Verify spacing after assistant messages and before user prompts
+- Verify no extra spacing above tool calls
 
 ## Child DOX Index
 None
