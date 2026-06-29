@@ -41,8 +41,7 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - New extensions should appear in the system prompt under `## Loaded Extensions` if properly registered.
 
 ## Child DOX Index
-- `compactui/` — Compact tool rendering: orange tool names, args truncation, pipe-framed expanded output, diff colors, duration tracking
-- `commandcode-provider/` — Command Code provider: Claude, GPT, Gemini, DeepSeek, and other models with OAuth login and per-model pricing
+- `compactui/` — Compact tool rendering, responsive wrapping, assistant time tracking footer, tagged thinking dimming, and tool status dot.
 - `context/` — `/context` overlay: token grid breakdown with per-category color-coded visualization
 - `filechanges/` — `/filechanges` overlay + accept/decline; tracks file modifications per session and exposes counts for the statusline
 - `goal/` — `/goal` command — autonomous task orchestrator with pause/resume, turn tracking, history
@@ -60,3 +59,5 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - `timers/` — `/schedule` command — one-shot and repeating timers with notifications, auto-delete on fire, and overlay browser
 - `todo/` — `todo` tool + `/todos` command — structured task list with status tracking, categories, reminders, and persistent overlay widget
 - `video-extract/` — `video_extract` tool: YouTube + local video content extraction via Gemini API, ffmpeg, and yt-dlp
+- `ferment/` — Structured delivery framework (scope, phases, steps) for long-running agent tasks
+

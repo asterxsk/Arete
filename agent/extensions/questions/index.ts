@@ -45,7 +45,7 @@ class CompactResult implements Component {
 	}
 }
 
-const emptyComponent = { render: () => [] as string[], invalidate() {}, handleInput() {} };
+const emptyComponent = Object.freeze({ render: () => [] as string[], invalidate() {}, handleInput() {} });
 
 interface QuestionOptionInput {
 	value: string;

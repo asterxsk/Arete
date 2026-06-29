@@ -119,7 +119,10 @@ function normalizeAuthData(data: AuthFile): boolean {
 		}
 
 		const profileNames = Object.keys(group.profiles);
-		if (profileNames.length === 0) {
+		if (profileNames.length < 1) {
+			delete groups[provider];
+			delete data[provider];
+			changed = true;
 			continue;
 		}
 
@@ -253,6 +256,13 @@ function deleteProfile(data: AuthFile, provider: string, name: string): boolean 
 	const group = data.profiles?.[provider];
 	if (!group || !group.profiles[name]) return false;
 	delete group.profiles[name];
+
+	if (Object.keys(group.profiles).length < 1) {
+		delete data.profiles![provider];
+		delete data[provider];
+		return true;
+	}
+
 	if (group.active === name) {
 		group.active = getActiveProfileName(group);
 	}
@@ -279,8 +289,9 @@ function getAuthMode(data: AuthFile, provider: string): "oauth" | "api_key" | "u
 class ProfileSwitcherComponent {
 	private _focused = false;
 	private readonly input = new Input();
-	private readonly entries: FlatEntry[];
-	private cursor = 0;
+	private readonly providers: { provider: string; profiles: { name: string; label: string; active: boolean; credential: StoredCredential }[] }[] = [];
+	private tabIndex = 0;
+	private profileIndex = 0;
 	private mode: "browse" | "rename" | "create" = "browse";
 	private editProvider = "";
 	private editOriginalName = "";
@@ -293,12 +304,36 @@ class ProfileSwitcherComponent {
 
 	constructor(
 		private readonly tui: { requestRender: () => void },
-		private readonly theme: { fg: (name: string, text: string) => string; bold: (text: string) => string },
+		private readonly theme: { fg: (name: string, text: string) => string; bg: (name: string, text: string) => string; bold: (text: string) => string; inverse: (text: string) => string },
 		data: AuthFile,
+		initialProvider?: string,
+		initialProfile?: string
 	) {
-		this.entries = profileEntries(data);
-		this.cursor = Math.max(0, this.entries.findIndex((entry) => entry.kind === "profile" || entry.kind === "header"));
-		if (this.cursor < 0) this.cursor = 0;
+		const groups = data.profiles ?? {};
+		for (const [provider, group] of Object.entries(groups)) {
+			const profileNames = Object.keys(group.profiles);
+			const profiles = profileNames.map((name) => ({
+				name,
+				label: name,
+				active: name === group.active,
+				credential: group.profiles[name]
+			}));
+			this.providers.push({ provider, profiles });
+		}
+		
+		if (initialProvider) {
+			const pIdx = this.providers.findIndex(p => p.provider === initialProvider);
+			if (pIdx >= 0) {
+				this.tabIndex = pIdx;
+				if (initialProfile) {
+					const prIdx = this.providers[pIdx].profiles.findIndex(pr => pr.name === initialProfile);
+					if (prIdx >= 0) {
+						this.profileIndex = prIdx;
+					}
+				}
+			}
+		}
+
 		this.input.onSubmit = (value) => this.commitInput(value);
 		this.input.onEscape = () => {
 			this.mode = "browse";
@@ -322,20 +357,30 @@ class ProfileSwitcherComponent {
 		this.input.focused = this._focused && this.mode !== "browse";
 	}
 
-	private currentEntry(): FlatEntry | undefined {
-		return this.entries[this.cursor];
+	private currentProvider(): string | undefined {
+		return this.providers[this.tabIndex]?.provider;
 	}
 
-	private currentProvider(): string {
-		return resolveCurrentProvider(this.entries, this.cursor) ?? "";
+	private currentProfile() {
+		return this.providers[this.tabIndex]?.profiles[this.profileIndex];
 	}
 
-	private moveCursor(delta: number): void {
-		if (this.entries.length === 0) return;
+	private moveTab(delta: number): void {
+		if (this.providers.length === 0) return;
 		this.resetDeleteArm();
-		let next = this.cursor + delta;
-		next = Math.max(0, Math.min(this.entries.length - 1, next));
-		this.cursor = next;
+		this.tabIndex = (this.tabIndex + delta + this.providers.length) % this.providers.length;
+		this.profileIndex = 0;
+		this.invalidate();
+	}
+
+	private moveProfile(delta: number): void {
+		const profiles = this.providers[this.tabIndex]?.profiles;
+		if (!profiles || profiles.length === 0) return;
+		this.resetDeleteArm();
+		let next = this.profileIndex + delta;
+		if (next < 0) next = 0;
+		if (next >= profiles.length) next = profiles.length - 1;
+		this.profileIndex = next;
 		this.invalidate();
 	}
 
@@ -389,22 +434,39 @@ class ProfileSwitcherComponent {
 			return;
 		}
 
+		if (matchesKey(data, Key.tab)) {
+			this.moveTab(1);
+			this.tui.requestRender();
+			return;
+		}
+
 		if (matchesKey(data, Key.up)) {
-			this.moveCursor(-1);
+			this.moveProfile(-1);
 			this.tui.requestRender();
 			return;
 		}
 		if (matchesKey(data, Key.down)) {
-			this.moveCursor(1);
+			this.moveProfile(1);
+			this.tui.requestRender();
+			return;
+		}
+		if (matchesKey(data, Key.left)) {
+			this.moveTab(-1);
+			this.tui.requestRender();
+			return;
+		}
+		if (matchesKey(data, Key.right)) {
+			this.moveTab(1);
 			this.tui.requestRender();
 			return;
 		}
 
 		if (matchesKey(data, Key.enter)) {
 			this.resetDeleteArm();
-			const entry = this.currentEntry();
-			if (entry?.kind === "profile") {
-				this.onDone?.({ action: "switch", provider: entry.provider, name: entry.name });
+			const provider = this.currentProvider();
+			const profile = this.currentProfile();
+			if (provider && profile) {
+				this.onDone?.({ action: "switch", provider, name: profile.name });
 			}
 			return;
 		}
@@ -415,30 +477,34 @@ class ProfileSwitcherComponent {
 			return;
 		}
 
-		const entry = this.currentEntry();
+		const provider = this.currentProvider();
+		const profile = this.currentProfile();
+		
 		if (matchesKey(data, Key.ctrl("r"))) {
-			if (entry?.kind === "profile") {
-				this.openEditor("rename", entry.provider, entry.name, entry.name);
+			if (provider && profile) {
+				this.openEditor("rename", provider, profile.name, profile.name);
 			}
 			return;
 		}
 		if (matchesKey(data, Key.ctrl("n"))) {
-			this.openEditor("create", this.currentProvider(), "");
+		    if (provider) {
+			    this.openEditor("create", provider, "");
+			}
 			return;
 		}
 		if (matchesKey(data, Key.ctrl("d"))) {
-			if (entry?.kind !== "profile") {
+			if (!provider || !profile) {
 				this.resetDeleteArm();
 				return;
 			}
-			if (this.deleteArmed && this.deleteArmedProvider === entry.provider && this.deleteArmedName === entry.name) {
+			if (this.deleteArmed && this.deleteArmedProvider === provider && this.deleteArmedName === profile.name) {
 				this.resetDeleteArm();
-				this.onDone?.({ action: "delete", provider: entry.provider, name: entry.name });
+				this.onDone?.({ action: "delete", provider, name: profile.name });
 				return;
 			}
 			this.deleteArmed = true;
-			this.deleteArmedProvider = entry.provider;
-			this.deleteArmedName = entry.name;
+			this.deleteArmedProvider = provider;
+			this.deleteArmedName = profile.name;
 			this.invalidate();
 			this.tui.requestRender();
 			return;
@@ -454,7 +520,7 @@ class ProfileSwitcherComponent {
 		if (this.mode === "create") {
 			return "Enter to create profile • Esc to cancel";
 		}
-		return "↑↓ move • Enter switch • ^N new • ^R rename • ^D delete • Esc close";
+		return "Tab switch provider • ↑↓ move • Enter switch • ^N new • ^R rename • ^D delete • Esc close";
 	}
 
 	render(width: number): string[] {
@@ -466,25 +532,37 @@ class ProfileSwitcherComponent {
 		add(arrow);
 		add(this.theme.fg("accent", this.theme.bold(" Profile Switcher")));
 		lines.push("");
+		
+		if (this.providers.length > 0) {
+			const tabs = this.providers.map((p, i) => {
+				const label = p.provider;
+				if (i === this.tabIndex) {
+					return this.theme.bg("selectedBg", this.theme.fg("text", this.theme.bold(` ${label} `)));
+				}
+				return this.theme.bg("toolPendingBg", this.theme.fg("muted", ` ${label} `));
+			});
+			add(" " + tabs.join(" "));
+		}
+		lines.push("");
 
-		if (this.entries.length === 0) {
+		if (this.providers.length === 0) {
 			add(this.theme.fg("muted", " No saved profiles found."));
 			add(this.theme.fg("dim", " Press ^N to create one once a provider exists, or Esc to close."));
 		} else {
-			for (let i = 0; i < this.entries.length; i++) {
-				const entry = this.entries[i];
-				const selected = i === this.cursor;
-				if (entry.kind === "header") {
-					const marker = selected ? "> " : "  ";
-					const label = this.theme.fg("dim", `── ${entry.label} ──`);
-					add(`${marker}${label}`);
-					continue;
+			const group = this.providers[this.tabIndex];
+			if (group && group.profiles.length > 0) {
+				for (let i = 0; i < group.profiles.length; i++) {
+					const entry = group.profiles[i];
+					const selected = i === this.profileIndex;
+					const icon = entry.active ? "■" : "□";
+					
+					const marker = selected ? this.theme.fg("accent", "  " + icon + " ") : "  " + icon + " ";
+					const name = selected ? this.theme.fg("accent", entry.label) : this.theme.fg("text", entry.label);
+					const active = entry.active ? ` ${this.theme.fg("dim", "[active]")}` : "";
+					add(`${marker}${name}${active}`);
 				}
-
-				const marker = selected ? this.theme.fg("accent", "> ") : "  ";
-				const name = selected ? this.theme.fg("accent", entry.label) : this.theme.fg("text", entry.label);
-				const active = entry.active ? ` ${this.theme.fg("success", "✓ active")}` : "";
-				add(`${marker}${name}${active}`);
+			} else {
+				add(this.theme.fg("muted", " No profiles for this provider."));
 			}
 		}
 
@@ -534,16 +612,21 @@ export default function (pi: ExtensionAPI) {
 
 			let data = loadAuthData();
 			updateRuntimeAuth(ctx);
+			let lastProvider: string | undefined;
+			let lastProfile: string | undefined;
 
 			while (true) {
 				const result = await ctx.ui.custom<DialogAction>((tui, theme, _kb, done) => {
-					const component = new ProfileSwitcherComponent(tui, theme, data);
+					const component = new ProfileSwitcherComponent(tui, theme, data, lastProvider, lastProfile);
 					component.onDone = done;
 					component.focused = true;
 					return component;
 				});
 
 				if (!result || result.action === "cancel") return;
+				
+				lastProvider = result.provider;
+				lastProfile = result.action === "rename" ? result.newName : result.name;
 
 				if (result.action === "switch") {
 					if (switchProfile(data, result.provider, result.name)) {
@@ -551,7 +634,8 @@ export default function (pi: ExtensionAPI) {
 						updateRuntimeAuth(ctx);
 						ctx.ui.notify(`Switched ${result.provider} → ${result.name}`, "success");
 					}
-					return;
+					data = loadAuthData();
+					continue;
 				}
 
 				if (result.action === "rename") {

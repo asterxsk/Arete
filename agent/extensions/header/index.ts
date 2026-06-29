@@ -148,7 +148,20 @@ export default function (pi: ExtensionAPI) {
           if (fs.existsSync(versionPath)) {
             localVersion = fs.readFileSync(versionPath, "utf-8").trim();
           }
-          if (remoteVersion && remoteVersion !== localVersion) {
+          
+          let isUpdateAvailable = false;
+          if (remoteVersion && localVersion) {
+            const rParts = remoteVersion.split('.').map(n => parseInt(n, 10) || 0);
+            const lParts = localVersion.split('.').map(n => parseInt(n, 10) || 0);
+            for (let i = 0; i < Math.max(rParts.length, lParts.length); i++) {
+              const r = rParts[i] || 0;
+              const l = lParts[i] || 0;
+              if (r > l) { isUpdateAvailable = true; break; }
+              if (r < l) { break; }
+            }
+          }
+          
+          if (isUpdateAvailable) {
             updateStatus = " \x1b[38;2;255;255;0m- Update available (/update to pull)\x1b[0m";
             requestHeaderRender?.();
           }

@@ -11,8 +11,8 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Message spacing: controlled spacing after assistant messages, removed native Spacers above tools
 
 ## Local Contracts
-- Patches tools: `read`, `write`, `edit`, `bash`, `ls`, `grep`, `find` (via explicit re-registration)
-- Special cases in generic patcher: `pwsh/powershell`, `run_command`, `web_search`, `web_fetch/fetch_content`, `manage_task`, `schedule`
+- Patches tools: `read`, `write`, `edit`, `bash`, `ls`, `grep`, `find` (via explicit re-registration in `index.ts`)
+- Special cases in generic patcher (`patch-tools.ts`): `pwsh/powershell`, `run_command`, `web_search`, `web_fetch/fetch_content`, `manage_task`, `schedule`
 - Excludes from patching: `subagent`, `todo` (rendered as no-op), `memory`, `memory_search`, `session_search` (handled by pi-hermes-memory)
 - Sets `__pi_betterui_enabled` global flag for other extensions
 - Exposes `__pi_patchTool` globally as fallback for fresh pi objects
@@ -46,6 +46,15 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Verify thinking blocks render with proper styling
 - Verify spacing after assistant messages and before user prompts
 - Verify no extra spacing above tool calls
+
+## File Structure
+- `index.ts` — Main entry: imports modules, wires event hooks, re-registers read/write/edit/bash/ls/grep/find tools
+- `rendering.ts` — Shared rendering primitives: `line`, `noOp`, `orange`, `compactCall`, `expandedBox`, `diffExpandedBox`, `wrapWithPrefix`, `formatDur`, `captureResult`
+- `patch-tools.ts` — Tool patching: `patchTool` function, `KNOWN_TOOLS`, `TRUNCATED_TOOLS`, special-case handlers for todo/questions/powershell/run_command/web_search/web_fetch/manage_task/schedule
+- `thinking-block.ts` — `ThinkingBlock` component class, `initHideThinking`, `colorThinkingText`, `italicText`
+- `assistant-footer.ts` — `initAssistantFooter`: appends "✻ Worked for Xs" to assistant messages
+- `prompt-ui.ts` — `initPromptUi`: patches UserMessageComponent with dark background and ❯ prefix
+- `tool-status-dot.ts` — `initToolStatusDot`: animated blinking status dot for running tools
 
 ## Child DOX Index
 None

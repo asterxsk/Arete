@@ -24,6 +24,7 @@
 
 # Re-ignore specific things inside extensions
 agent/extensions/commandcode-provider/
+agent/extensions/kimchi-provider/
 agent/extensions/**/docs/
 agent/extensions/**/doc/
 

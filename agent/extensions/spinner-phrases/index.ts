@@ -23,10 +23,13 @@ const RESET = "\x1b[0m";
 
 // ── Star spinner frames ───────────────────────────────────────────
 
-const STAR_FRAMES = ["✦", "✧", "★", "✧", "✦", "☆", "✻"];
+const STAR_FRAMES = ["·", "+", "×", "✦", "✧", "★", "✧", "✦", "☆", "✻", "×", "+"];
 
 // Custom animation curve — how many ticks each frame stays visible (130ms per tick)
 const FRAME_DWELL: Record<string, number> = {
+	"·": 1,
+	"+": 1,
+	"×": 1,
 	"✦": 1,
 	"✧": 1,
 	"★": 1,
