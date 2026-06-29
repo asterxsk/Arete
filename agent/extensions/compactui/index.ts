@@ -693,8 +693,8 @@ export default function (pi: ExtensionAPI) {
         if (InteractiveMode && InteractiveMode.prototype.addMessageToChat && !(InteractiveMode.prototype.addMessageToChat as any).__compactui_patched) {
             const originalAdd = InteractiveMode.prototype.addMessageToChat;
             InteractiveMode.prototype.addMessageToChat = function(message: any, options?: any) {
-                // Add spacing before user message if previous was assistant
-                if (message.role === "user" && lastMessageRole === "assistant") {
+                // Add spacing before user message
+                if (message.role === "user") {
                     this.chatContainer.addChild(line(""));
                 }
                 

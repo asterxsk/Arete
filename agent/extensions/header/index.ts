@@ -36,7 +36,7 @@ function colorizeBanner(lines: string[]): string[] {
 }
 
 export function buildBannerArtLines(): string[] {
-  return ["", " ▝██████████▘", "   ██    ██", "   ██    ██", "  ▄██    ██▄"];
+  return ["", " ▝██████████▘", "   ██    ██", "   ██    ██", "  ▄██    ██▄", ""];
 }
 
 function composeSideBySide(
@@ -95,6 +95,7 @@ function buildInfoPanel(height: number): string[] {
   lines.push(paint(GREY, provider));
   lines.push(paint(GREY, model));
   lines.push(paint(GREY, cwd));
+  lines.push("");
 
   return lines;
 }
