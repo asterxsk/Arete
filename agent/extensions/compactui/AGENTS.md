@@ -20,7 +20,11 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - `KNOWN_TOOLS` set tracks all registered Pi tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `web_search`, `web_fetch`, `fetch_content`, `get_search_content`, `run_command`, `manage_task`, `schedule`, `subagent`, `todo`, `powershell`, `questions`, `video_extract`, `skill_manage`, `plan`, `memory`, `memory_search`, `session_search`
 
 ## Work Guidance
-- Uniform spacing: each `AssistantMessageComponent`, `UserMessageComponent`, and `ToolExecutionComponent` render prepends one blank line; `Container.prototype.addChild` dynamically patches streaming/message-like components the same way and blocks native Spacers / stray empty-string components to avoid double gaps
+- Uniform spacing: every non-blank component added to `chatContainer` gets exactly one blank line above it; this is enforced by a persistent `chatContainer.addChild` wrapper installed on the first `addMessageToChat` call. The wrapper holds back any explicit Spacer/empty-line component (so explicit pi spacers are reused instead of doubled) and otherwise injects a fresh `Spacer(1)` only when the container already has content. This covers all addChild code paths: `addMessageToChat` (user/assistant/tool/bash/custom), `message_start` (streaming `AssistantMessageComponent`), `message_update` (tool components), toggle-thinking rebuild, `showStatus`, error messages
+- Leading-blank stripping: `ToolExecutionComponent`, `BashExecutionComponent`, and `CustomMessageComponent` each internally added a `Spacer(1)` as their first child (or a leading `""` in render output), doubling the blank line above them after the proactive spacer was installed. Their `render` methods are now patched to strip any leading blank lines so the proactive `chatContainer.addChild` spacer remains the single source of inter-message spacing
+- Thinking-block spacing: when the first content of an assistant message is a thinking block, no internal separator is added inside `contentContainer` before the `ThinkingBlock`. The proactive chatContainer spacer is already the 1-line gap from the previous chat line. Subsequent thinking blocks (after text or another thinking block) still get a `line("")` separator inside `contentContainer`
+- Zero-gap spinner-to-widget: `InteractiveMode.prototype.renderWidgetContainer` is patched to pass `leadingSpacer=false` so aboveEditor widgets (todos, etc.) sit flush against the spinner with no blank line between them
+- One-line gap above spinner: relies on the Loader's natural `["", ...text]` render output (NOT overridden) so the spinner gets exactly 1 blank line above it from the chat edge while keeping the spinner-to-todos gap at 0
 - Collapsed view shows two lines:
   1. `tool [args] (ctrl+o to expand)` — orange tool name, truncated args
   2. `⎿ summary (N lines)` — dimmed summary with line/task count (or `⎿ failed tool call` on error)
@@ -45,7 +49,11 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Run bash with >5 lines output — verify truncation message
 - Verify thinking blocks render with proper styling
 - Verify one blank line above every chat message and every tool output
+- Trigger an assistant message that runs a tool (e.g. `bash ls`) and verify exactly 1 blank line separates the assistant message from the tool execution box, and 1 blank line separates the tool execution from the next message
+- Trigger an assistant response that begins with a thinking block (e.g. ask a question that requires reasoning) and confirm there is exactly **one** blank line between the previous chat line and the first line of the thinking block — not two
 - Verify the gap line is not indented by the status-dot patch
+- Trigger the agent spinner (run any tool, e.g. `bash ls`) and confirm: (a) exactly **one** blank line between the last chat line and the spinner line, (b) **no** blank line between the spinner and the todo overlay (or other aboveEditor widget) — 1-line gap above spinner, 0-line gap below
+- After an assistant message streams in, verify there is exactly one blank line between the previous content (chat/tool/streaming end) and the new assistant message — for both the freshly-streamed case and the rebuilt-after-toggle-thinking case
 
 ## File Structure
 - `index.ts` — Main entry: imports modules, wires event hooks, re-registers read/write/edit/bash/ls/grep/find tools

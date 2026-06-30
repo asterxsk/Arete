@@ -134,7 +134,10 @@ export class TodoOverlay {
 		const lines: string[] = [];
 		const layout = selectOverlayLayout(overlayState, MAX_WIDGET_LINES - 1);
 		for (let i = 0; i < layout.visible.length; i++) {
-			const prefix = i === 0 ? " └ " : "   ";
+			// Prefix aligns the └ with the first letter of the spinner phrase
+			// (e.g. "✻ Manifesting" — └ should sit under "M", not under "✻").
+			// The "✻ " occupies 2 columns; the todo starts ONE column after that, so the tree glyph sits at col 3
+			const prefix = i === 0 ? "   └ " : "     ";
 			lines.push(truncate(formatOverlayTaskLine(layout.visible[i], theme, showIds, prefix)));
 		}
 
@@ -162,7 +165,7 @@ export class TodoOverlay {
 		const summary =
 			overflowParts.length > 0 ? `+${totalHidden} ${more} (${overflowParts.join(", ")})` : `+${totalHidden} ${more}`;
 		lines.push("");
-		lines.push(truncate(` ${theme.fg("dim", "└")} ${theme.fg("dim", summary)}`));
+		lines.push(truncate(`   ${theme.fg("dim", "└")} ${theme.fg("dim", summary)}`));
 		return lines;
 	}
 

@@ -13,6 +13,8 @@
 import type { ExtensionAPI, EditToolDetails } from "@earendil-works/pi-coding-agent";
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
+  CustomMessageComponent,
   InteractiveMode,
   ToolExecutionComponent,
   createBashTool,
@@ -84,69 +86,58 @@ export default function (pi: ExtensionAPI) {
     try {
       if (InteractiveMode && InteractiveMode.prototype.addMessageToChat &&
           !(InteractiveMode.prototype.addMessageToChat as any).__compactui_patched) {
+        // ── Persistent chatContainer.addChild patch with proactive spacer ──
+        // Installs a one-time wrapper on this.chatContainer that gives every
+        // non-blank child a uniform 1-line spacer above it. Behaviour:
+        //   - Incoming single-blank-line component (native Spacer, line("")) →
+        //     held back; flushed before the next non-blank child so we never
+        //     double up spacers.
+        //   - Incoming non-blank child → if a spacer is held, flush it; else if
+        //     the container already has content, inject a fresh Spacer(1) above.
+        //   - Empty container + first child → no spacer injected (nothing to
+        //     separate from).
+        // This covers every code path that adds to chatContainer: addMessageToChat
+        // (user/assistant/tool/bash/custom), message_start (streaming
+        // AssistantMessageComponent), message_update (tool components),
+        // toggleThinkingBlockVisibility rebuild, showStatus, errorMessage, etc.
+        const installChatContainerProactiveSpacer = (chatContainer: any) => {
+          if (chatContainer.__compactui_proactiveSpacerInstalled) return;
+          const originalAddChild = chatContainer.addChild;
+          let lastSpacerArgs: any[] | null = null;
+          chatContainer.addChild = function (...args: any[]) {
+            // Hold back any spacer component so we never render two blank
+            // lines back-to-back. It will be flushed before the next
+            // non-blank component, or dropped if no such component follows.
+            if (args.length > 0 && args[0] && typeof args[0].render === "function") {
+              const lines = args[0].render();
+              if (lines.length === 1 && lines[0].trim() === "") {
+                lastSpacerArgs = args;
+                return;
+              }
+            }
+
+            // Non-spacer incoming: consume the held spacer (if any) OR inject
+            // a fresh Spacer(1) above when the container already has content.
+            if (lastSpacerArgs) {
+              originalAddChild.apply(this, lastSpacerArgs);
+              lastSpacerArgs = null;
+            } else if (this.children.length > 0) {
+              originalAddChild.call(this, new Spacer(1));
+            }
+
+            return originalAddChild.apply(this, args);
+          };
+          chatContainer.__compactui_proactiveSpacerInstalled = true;
+        };
+
         const originalAdd = InteractiveMode.prototype.addMessageToChat;
         InteractiveMode.prototype.addMessageToChat = function (message: any, options?: any) {
-          const originalAddChild = this.chatContainer.addChild;
-          let lastSpacerArgs: any[] | null = null;
-          this.chatContainer.addChild = function (...args: any[]) {
-            if (lastSpacerArgs) {
-              originalAddChild.apply(this, lastSpacerArgs);
-              lastSpacerArgs = null;
-            }
-            if (args.length > 0 && args[0] && typeof args[0].render === "function") {
-              const lines = args[0].render();
-              if (lines.length === 1 && lines[0].trim() === "") {
-                lastSpacerArgs = args;
-                return;
-              }
-            }
-            return originalAddChild.apply(this, args);
-          };
-
-          let result;
-          try {
-            result = originalAdd.call(this, message, options);
-          } finally {
-            this.chatContainer.addChild = originalAddChild;
-          }
-          return result;
+          // First call into addMessageToChat installs the persistent wrapper
+          // on chatContainer so streaming/direct addChild calls also benefit.
+          if (this.chatContainer) installChatContainerProactiveSpacer(this.chatContainer);
+          return originalAdd.call(this, message, options);
         };
         (InteractiveMode.prototype.addMessageToChat as any).__compactui_patched = true;
-      }
-
-      if (
-        InteractiveMode &&
-        InteractiveMode.prototype.syncMessages &&
-        !InteractiveMode.prototype.syncMessages.__compactui_patched
-      ) {
-        const originalSyncMessages = InteractiveMode.prototype.syncMessages;
-        InteractiveMode.prototype.syncMessages = function () {
-          const originalAddChild = this.chatContainer.addChild;
-          let lastSpacerArgs: any[] | null = null;
-          this.chatContainer.addChild = function (...args: any[]) {
-            if (lastSpacerArgs) {
-              originalAddChild.apply(this, lastSpacerArgs);
-              lastSpacerArgs = null;
-            }
-            if (args.length > 0 && args[0] && typeof args[0].render === "function") {
-              const lines = args[0].render();
-              if (lines.length === 1 && lines[0].trim() === "") {
-                lastSpacerArgs = args;
-                return;
-              }
-            }
-            return originalAddChild.apply(this, args);
-          };
-
-          let result;
-          try {
-            result = originalSyncMessages.apply(this, arguments);
-          } finally {
-            this.chatContainer.addChild = originalAddChild;
-          }
-          return result;
-        };
-        InteractiveMode.prototype.syncMessages.__compactui_patched = true;
       }
 
       // ── Patch AssistantMessageComponent.updateContent ────────────────
@@ -212,7 +203,14 @@ export default function (pi: ExtensionAPI) {
             ) {
               hasThinking = true;
               let tText = content.thinking.trim();
-              this.contentContainer.addChild(line("")); // Add spacing above thinking
+              // Only inject a separator if thinking isn't the first child of
+              // contentContainer. When thinking is first, the proactive
+              // chatContainer spacer above the AssistantMessageComponent is
+              // already the separator from the previous chat line — adding
+              // another line("") here would yield a 2-line gap.
+              if (this.contentContainer.children.length > 0) {
+                this.contentContainer.addChild(line(""));
+              }
               this.contentContainer.addChild(
                 new ThinkingBlock(tText, 1, 0, undefined, { color: colorThinkingText, italic: true })
               );
@@ -257,8 +255,7 @@ export default function (pi: ExtensionAPI) {
               };
               const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
               
-              // Keep a spacer at the top to match default ToolExecutionComponent spacing
-              const resultLines = [""];
+              const resultLines: string[] = [];
               
               const callComp = compactCall(this.toolName, argsStr, dummyTheme);
               resultLines.push(...callComp.render(100));
@@ -275,9 +272,41 @@ export default function (pi: ExtensionAPI) {
               return resultLines;
             }
           }
-          return originalRender.apply(this, arguments);
+          const out = originalRender.apply(this, arguments) as string[];
+          while (out.length > 0 && out[0].trim() === "") out.shift();
+          return out;
         };
         ToolExecutionComponent.prototype.render.__compactui_patched = true;
+      }
+
+      // ── Patch BashExecutionComponent.render ──────────────────────────
+      if (
+        BashExecutionComponent &&
+        BashExecutionComponent.prototype.render &&
+        !(BashExecutionComponent.prototype.render as any).__compactui_patched
+      ) {
+        const originalBashRender = BashExecutionComponent.prototype.render;
+        BashExecutionComponent.prototype.render = function (this: any, width: number) {
+          const lines = originalBashRender.call(this, width);
+          while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+          return lines;
+        };
+        (BashExecutionComponent.prototype.render as any).__compactui_patched = true;
+      }
+
+      // ── Patch CustomMessageComponent.render ──────────────────────────
+      if (
+        CustomMessageComponent &&
+        CustomMessageComponent.prototype.render &&
+        !(CustomMessageComponent.prototype.render as any).__compactui_patched
+      ) {
+        const originalCustomRender = CustomMessageComponent.prototype.render;
+        CustomMessageComponent.prototype.render = function (this: any, width: number) {
+          const lines = originalCustomRender.call(this, width);
+          while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+          return lines;
+        };
+        (CustomMessageComponent.prototype.render as any).__compactui_patched = true;
       }
 
       // Patch toggleToolOutputExpansion
@@ -773,6 +802,30 @@ export default function (pi: ExtensionAPI) {
       );
     },
   });
+
+  // ── Patch renderWidgetContainer: remove leading spacer above widgets ──
+  // InteractiveMode.renderWidgetContainer() unconditionally adds a Spacer(1)
+  // before any aboveEditor widgets when leadingSpacer=true, producing a blank
+  // line between the spinner and the todo overlay. We patch it to skip that
+  // spacer so the todos sit flush against the spinner.
+  if (
+    InteractiveMode &&
+    InteractiveMode.prototype.renderWidgetContainer &&
+    !(InteractiveMode.prototype.renderWidgetContainer as any).__compactui_patched
+  ) {
+    const originalRenderWidgetContainer = InteractiveMode.prototype.renderWidgetContainer;
+    InteractiveMode.prototype.renderWidgetContainer = function (
+      container: any,
+      widgets: any,
+      spacerWhenEmpty: boolean,
+      leadingSpacer: boolean,
+    ) {
+      // Suppress the leading spacer — it creates a blank gap between the
+      // spinner/working-message and the aboveEditor widget (e.g. todos).
+      return originalRenderWidgetContainer.call(this, container, widgets, spacerWhenEmpty, false);
+    };
+    (InteractiveMode.prototype.renderWidgetContainer as any).__compactui_patched = true;
+  }
 
   // ── Initialize UI Features ──────────────────────────────────────────
   initAssistantFooter(pi);

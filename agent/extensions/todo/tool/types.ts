@@ -25,7 +25,25 @@ export const MSG_NO_TODOS = "No todos yet. Ask the agent to add some!";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "deleted";
 
-export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear";
+export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear" | "batch";
+
+/**
+ * A single operation within a batch call. Mirrors TaskMutationParams minus
+ * the `items` field (batches cannot be nested).
+ */
+export interface BatchItem {
+	action: Exclude<TaskAction, "batch" | "list" | "get">;
+	subject?: string;
+	description?: string;
+	activeForm?: string;
+	status?: TaskStatus;
+	blockedBy?: number[];
+	addBlockedBy?: number[];
+	removeBlockedBy?: number[];
+	owner?: string;
+	metadata?: Record<string, unknown>;
+	id?: number;
+}
 
 export interface Task {
 	id: number;
@@ -70,6 +88,8 @@ export interface TaskMutationParams {
 	metadata?: Record<string, unknown>;
 	id?: number;
 	includeDeleted?: boolean;
+	/** Batch mode: list of sub-operations to apply atomically in order. */
+	items?: BatchItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +98,28 @@ export interface TaskMutationParams {
 // pre-refactor schema at `packages/rpiv-todo/todo.ts:512-573`.
 // ---------------------------------------------------------------------------
 
+const BatchItemSchema = Type.Object({
+	action: StringEnum(["create", "update", "delete", "clear"] as const, {
+		description: "Action for this batch item (create, update, delete, or clear)",
+	}),
+	subject: Type.Optional(Type.String({ description: "Task subject (required for create items)" })),
+	description: Type.Optional(Type.String({ description: "Long-form task description" })),
+	activeForm: Type.Optional(Type.String({ description: "Present-continuous spinner label" })),
+	status: Type.Optional(
+		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
+			description: "Target status",
+		}),
+	),
+	blockedBy: Type.Optional(Type.Array(Type.Number(), { description: "Initial blockedBy ids (create only)" })),
+	addBlockedBy: Type.Optional(Type.Array(Type.Number(), { description: "Ids to add to blockedBy" })),
+	removeBlockedBy: Type.Optional(Type.Array(Type.Number(), { description: "Ids to remove from blockedBy" })),
+	owner: Type.Optional(Type.String({ description: "Agent/owner assigned" })),
+	metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Arbitrary metadata" })),
+	id: Type.Optional(Type.Number({ description: "Task id (required for update and delete items)" })),
+});
+
 export const TodoParamsSchema = Type.Object({
-	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
+	action: StringEnum(["create", "update", "list", "get", "delete", "clear", "batch"] as const),
 	subject: Type.Optional(Type.String({ description: "Task subject line (required for create)" })),
 	description: Type.Optional(Type.String({ description: "Long-form task description" })),
 	activeForm: Type.Optional(
@@ -121,6 +161,12 @@ export const TodoParamsSchema = Type.Object({
 	includeDeleted: Type.Optional(
 		Type.Boolean({
 			description: "If true, list action returns deleted (tombstoned) tasks as well. Default: false.",
+		}),
+	),
+	items: Type.Optional(
+		Type.Array(BatchItemSchema, {
+			description:
+				"Batch mode only: list of sub-operations (create/update/delete/clear) applied in order. Ids produced by earlier creates in the same batch are NOT usable by later items in that same batch call — reference existing ids only.",
 		}),
 	),
 });

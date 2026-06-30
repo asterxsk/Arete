@@ -64,6 +64,14 @@ export function formatContent(op: Op, state: TaskState): string {
 		}
 		case "get":
 			return formatGetLines(op.task, state);
+		case "batch": {
+			if (op.results.length === 0) return "Batch: 0 operations";
+			const lines = [`Batch: ${op.results.length} operation${op.results.length !== 1 ? "s" : ""}:`];
+			for (const { index, op: sub } of op.results) {
+				lines.push(`  [${index}] ${formatContent(sub, state)}`);
+			}
+			return lines.join("\n");
+		}
 		case "error":
 			return `Error: ${op.message}`;
 	}

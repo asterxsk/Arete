@@ -19,6 +19,7 @@ export type Op =
 	| { kind: "list"; statusFilter?: TaskStatus; includeDeleted: boolean }
 	| { kind: "get"; task: Task }
 	| { kind: "clear"; count: number }
+	| { kind: "batch"; results: Array<{ index: number; op: Exclude<Op, { kind: "batch" }> }> }
 	| { kind: "error"; message: string };
 
 export interface ApplyResult {
@@ -181,6 +182,37 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			return {
 				state: { tasks: [], nextId: 1 },
 				op: { kind: "clear", count },
+			};
+		}
+
+		case "batch": {
+			if (!params.items?.length) {
+				return errorResult(state, "batch requires at least one item in items[]");
+			}
+			type BatchOp = Exclude<Op, { kind: "batch" }>;
+			const results: Array<{ index: number; op: BatchOp }> = [];
+			let currentState = state;
+
+			for (let i = 0; i < params.items.length; i++) {
+				const item = params.items[i];
+				const { action: itemAction, ...itemParams } = item;
+				// "list" and "get" are read-only — block them in batch to keep
+				// batch semantics simple (write-only side-effecting ops).
+				if ((itemAction as string) === "list" || (itemAction as string) === "get") {
+					return errorResult(state, `batch item ${i}: action "${itemAction}" not allowed in batch (use list/get separately)`);
+				}
+				const sub = applyTaskMutation(currentState, itemAction, itemParams as TaskMutationParams);
+				if (sub.op.kind === "error") {
+					// Abort on first error; return original state (no partial commit)
+					return errorResult(state, `batch item ${i} (${itemAction}): ${(sub.op as { kind: "error"; message: string }).message}`);
+				}
+				currentState = sub.state;
+				results.push({ index: i, op: sub.op as BatchOp });
+			}
+
+			return {
+				state: currentState,
+				op: { kind: "batch", results },
 			};
 		}
 	}
