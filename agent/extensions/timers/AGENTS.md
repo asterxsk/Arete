@@ -9,7 +9,7 @@ Manages one-shot and repeating timers with notifications. Fires timer alerts via
 - Timer countdown display widget
 
 ## Local Contracts
-- Registers command: `/schedule` (or `/timer`) with subcommands: set, repeat, list, clear, clear-all, stats, check
+- Registers command: `/schedule` with subcommands: set, repeat, list, clear, clear-all, stats, check
 - Registers tool: `schedule` (DurationSeconds, Prompt, MaxIterations)
 - `TimerEntry` interface: id, label, durationMs, status, startedAt, repeatCount, maxRepeats
 - `TimerStatus` type: "active" | "repeating"

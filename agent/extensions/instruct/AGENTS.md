@@ -1,4 +1,4 @@
-# system-it
+# instruct
 
 ## Purpose
 Injects custom system prompt instructions into the agent's context — sets PowerShell as default shell, enforces todo tracking, async workflows, questions tool usage, Nerd Font icons, and guidelines for plan mode tools (enter_plan and exit_plan).

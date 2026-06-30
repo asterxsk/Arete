@@ -18,6 +18,16 @@ Persistent memory system for Pi — stores facts, user profile, and procedural s
 - **Tools**: `tools/` — memory-tool, skill-tool, session-search-tool, memory-search-tool
 - **ExtensionAPI hooks**: `session_start`, `before_agent_start`, `message_end`, `session_shutdown`, `resources_discover`
 - **Paths**: `paths.ts` exports `AGENT_ROOT`
+- **Commands**:
+  - `/memory-insights` — view stored memories
+  - `/memory-skills` — list procedural skills
+  - `/memory-consolidate` — trigger manual consolidation
+  - `/memory-interview` — interactive memory interview
+  - `/memory-switch-project` — switch active project context
+  - `/memory-learn` — learn from current context
+  - `/memory-sync-markdown` — sync markdown memories to SQLite
+  - `/memory-preview-context` — preview what will be injected into system prompt
+  - `/memory-index-sessions` — manually trigger session indexing
 
 ## Work Guidance
 - DB shutdown ordering is critical — `dbManager.close()` must be the last DB-writing handler registered for `session_shutdown`

@@ -41,16 +41,18 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - New extensions should appear in the system prompt under `## Loaded Extensions` if properly registered.
 
 ## Child DOX Index
+- `agentzero/` — `/init` command and global AGENTS.md injection into system prompt
 - `compactui/` — Compact tool rendering, responsive wrapping, assistant time tracking footer, tagged thinking dimming, and tool status dot.
 - `context/` — `/context` overlay: token grid breakdown with per-category color-coded visualization
+- `ferment/` — Structured delivery framework (scope, phases, steps) for long-running agent tasks
 - `filechanges/` — `/filechanges` overlay + accept/decline; tracks file modifications per session and exposes counts for the statusline
 - `goal/` — `/goal` command — autonomous task orchestrator with pause/resume, turn tracking, history
 - `header/` — Banner header: ASCII art on the left, provider/model/version info panel on the right
-- `md-link/` — `/link-md`, `/unlink-md`, `/send-diff` — link a .md file for collaborative editing
-- `powershell/` — `powershell` tool (LLM-callable) with compactui-style rendering
-- `profile-switcher/` — `/profile` command — multi-account auth switching with OAuth and API key profiles
 - `instruct/` — Custom system instructions: shell preference, task tracking, no emojis, plan mode guidelines
 - `perms/` — Permissions manager and checklist (`/extensions`), plus plan mode (`/plan`, `plan` tool with strict disabling of `write`/`edit`/`bash` tools)
+- `pi-hermes-memory/` — Persistent memory system with MEMORY.md, SQLite, session search, skill storage, auto-consolidation
+- `powershell/` — `powershell` tool (LLM-callable) with compactui-style rendering
+- `profile-switcher/` — `/profile` command — multi-account auth switching with OAuth and API key profiles
 - `questions/` — `questions` tool (multi-choice TUI with optional custom-answer fallback and ASCII sketches)
 - `spinner-phrases/` — Animated star spinner with orange glow effect and fun Claude Code-style phrases
 - `statusline/` — Footer status line (left to right): provider, model, context bar, file changes counts; auto-refreshes
@@ -59,5 +61,4 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - `timers/` — `/schedule` command — one-shot and repeating timers with notifications, auto-delete on fire, and overlay browser
 - `todo/` — `todo` tool + `/todos` command — structured task list with status tracking, categories, reminders, and persistent overlay widget
 - `video-extract/` — `video_extract` tool: YouTube + local video content extraction via Gemini API, ffmpeg, and yt-dlp
-- `ferment/` — Structured delivery framework (scope, phases, steps) for long-running agent tasks
 

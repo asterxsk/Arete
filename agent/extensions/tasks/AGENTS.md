@@ -1,7 +1,7 @@
 # Tasks Extension
 
 ## Purpose
-Manages background terminal tasks with output capture. Agents can spawn commands, check status, wait for completion, and cancel tasks. Provides both user-facing `/task` command and LLM-callable `manage_task` and `run_command` tools.
+Manages background terminal tasks with output capture. Agents can spawn commands, check status, wait for completion, and cancel tasks. Provides both user-facing `/manage_task` command and LLM-callable `manage_task` and `run_command` tools.
 
 ## Ownership
 - `index.ts` — task management, UI component, tool registration
@@ -9,7 +9,7 @@ Manages background terminal tasks with output capture. Agents can spawn commands
 - Task output capture (stdout/stderr) with 50KB cap
 
 ## Local Contracts
-- Registers command: `/manage_task` (or `/task`) with subcommands: start, list, check, wait, cancel, clear, clear-all, stats
+- Registers command: `/manage_task` with subcommands: start, list, check, wait, cancel, clear, clear-all, stats
 - Registers tools: `manage_task` (list/kill/status/send_input), `run_command` (run terminal command)
 - `TaskEntry` interface: id, label, command, status, stdout, stderr, pid, proc
 - `TaskStatus` type: "running" | "completed" | "failed" | "cancelled"

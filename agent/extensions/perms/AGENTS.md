@@ -1,15 +1,28 @@
-# Perms Extension
+# perms
 
-This extension manages tool permissions and extensions for the Pi agent.
+## Purpose
+Manages tool permissions and extensions for the Pi agent, providing an extensions checklist and plan mode functionality.
 
-## Commands
-* `/extension`: Opens a checklist of the tools added via extensions. The user can toggle these tools to choose not to load them into the system prompt and harness.
-* `/plan`: Enters plan mode. The agent is notified and cannot touch anything, only explore.
+## Ownership
+- `/extensions` command — interactive checklist of extension-loaded tools
+- `/plan` command — enters plan mode
+- `plan` tool — toggles plan mode via `active` boolean parameter (true to enter, false to exit)
 
-## Tools
-* `enter_plan`: Use this tool voluntarily to enter plan mode when you are required to do a complex, multi-phase task. Once you enter plan mode, you may only explore the codebase to formulate a plan.
-* `exit_plan`: Hidden tool. When in plan mode, once you have explored the codebase and formulated a clear plan, invoke this tool to ask the user to exit plan mode.
-  * It will ask the user: "Do you want to exit plan mode? (Yes/No)"
-  * If the user says Yes, you proceed to implement your plan.
-  * If the user says No, your turn ends immediately.
-  * You may optionally ask a second question via the tool: "Use Parallel subagents, Sequential subagents, or no subagents at all?".
+## Local Contracts
+- Registers commands: `/extensions`, `/plan`
+- Registers tool: `plan` with `active` boolean parameter
+- Plan mode disables write/edit/bash tools to enforce read-only exploration
+
+## Work Guidance
+- `/extensions` opens a TUI checklist where users can toggle which extension tools are loaded into the system prompt
+- `plan` tool with `active: true` is invoked voluntarily by the agent when facing complex multi-phase tasks
+- `plan` tool with `active: false` asks the user to confirm exit, optionally asking about parallel vs sequential subagent execution
+- Plan mode restricts the agent to exploration only — no code modifications allowed
+
+## Verification
+- Run `/extensions` — verify checklist renders with all loaded extension tools
+- Run `/plan` — verify plan mode activates and agent cannot use write/edit/bash tools
+- Test `plan` tool with `active: true` to enter and `active: false` to exit plan mode
+
+## Child DOX Index
+None

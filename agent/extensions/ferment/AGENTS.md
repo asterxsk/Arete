@@ -4,12 +4,12 @@
 Structured delivery framework extension. Exposes tools to scaffold, scope, phase, and verify long-running agent tasks via the Ferment methodology.
 
 ## Ownership
-- `propose_ferment_scoping`, `scope_ferment`, `activate_ferment_phase` tools.
+- Tools: `propose_ferment_scoping`, `scope_ferment`, `activate_ferment_phase`, `refine_ferment_phase`, `start_ferment_step`, `complete_ferment_step`, `verify_ferment_step`, `complete_ferment_phase`, `skip_ferment_phase`, `fail_ferment_phase`, `skip_ferment_step`, `fail_ferment_step`, `complete_ferment`.
 - Step and phase lifecycle verification logic.
 - Local `ferment.json` store for ferment states.
 
 ## Local Contracts
-- Exposes tools to the agent context via `pi.on("agent_start")`.
+- Exposes tools to the agent context via `pi.on("session_start")`.
 - Stores state in `~/.pi/ferments/`.
 - Requires gates to pass before completing steps/phases.
 
@@ -20,7 +20,7 @@ Structured delivery framework extension. Exposes tools to scaffold, scope, phase
 - Set `parallelGroup` during scoping (`propose_ferment_scoping`) or during refinement (`refine_ferment_phase`).
 
 ## Verification
-- Run `npm test` if tests are added, or manually verify that the LLM receives the `propose_ferment_scoping` tool on session start.
+- Run `npm test` if tests are added, or manually verify that the LLM receives all 13 ferment tools (`propose_ferment_scoping`, `scope_ferment`, `activate_ferment_phase`, `refine_ferment_phase`, `start_ferment_step`, `complete_ferment_step`, `verify_ferment_step`, `complete_ferment_phase`, `skip_ferment_phase`, `fail_ferment_phase`, `skip_ferment_step`, `fail_ferment_step`, `complete_ferment`) on session start.
 
 ## Child DOX Index
 None.

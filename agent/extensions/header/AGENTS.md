@@ -7,7 +7,7 @@ Renders an ASCII-art banner header with the Arete branding on the left and an in
 - ASCII banner art generation and orange colorization
 - Info panel state (provider, model, cwd)
 - Side-by-side composition via `composeSideBySide()`
-- Global feature registry self-registration
+- Global feature registry self-registration (registers `/update` command)
 - Header lifecycle (session_start, model_select events)
 
 ## Local Contracts
@@ -16,6 +16,7 @@ Renders an ASCII-art banner header with the Arete branding on the left and an in
 - **Dependencies**: `@earendil-works/pi-tui` (`truncateToWidth`, `visibleWidth`)
 - **State**: `infoProvider`, `infoModel`, `requestHeaderRender` module-level variables
 - **UI contract**: `ctx.ui.setHeader(renderFactory)` — must return `{ render, invalidate }` component
+- **Commands**: `/update` — pulls latest Arete updates from GitHub
 
 ## Work Guidance
 - Banner art is 5 lines; keep aspect ratio stable when modifying

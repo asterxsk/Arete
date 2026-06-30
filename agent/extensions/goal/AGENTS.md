@@ -5,12 +5,13 @@ Autonomous goal mode — sets a goal and the agent works toward it with automati
 
 ## Ownership
 - `/goal` command and all subcommands (set, status, clear, pause, resume, config, history)
+- Aliases for clear: `stop`, `cancel`, `off`
 - Goal state management and persistence across session compacts
 - Continuation loop with turn tracking and time limits
 - Status widget with progress bar
 
 ## Local Contracts
-- Registers command: `/goal [text|status|clear|pause|resume|config|history]`
+- Registers command: `/goal [text|status|clear|stop|cancel|off|pause|resume|config|history]`
 - Hooks: `agent_end` (check completion, send continuation), `session_start` (restore state), `session_shutdown` (persist state)
 - Goal completion marker: `✻ Accomplished!` (must be in last line of response)
 - Global bridge: `__pi_goal_state` for cross-compact persistence
