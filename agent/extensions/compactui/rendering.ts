@@ -23,6 +23,17 @@ export function line(text: string): Component {
   };
 }
 
+/** Blank spacer line used for uniform element spacing. */
+export function spacer(): Component {
+  return {
+    __compactui_spacer: true,
+    render() {
+      return [""];
+    },
+    invalidate() {},
+  };
+}
+
 /** No-op component that renders nothing (avoids extra newline). */
 export function noOp(): Component {
   return {

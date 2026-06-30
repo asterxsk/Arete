@@ -8,7 +8,7 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Output truncation for bash/powershell/run_command (5-line limit)
 - Thinking block styling and assistant message layout
 - `ThinkingBlock` component for collapsed thinking display
-- Message spacing: controlled spacing after assistant messages, removed native Spacers above tools
+- Message spacing: one uniform blank line above every message/tool render output; no other custom gaps
 
 ## Local Contracts
 - Patches tools: `read`, `write`, `edit`, `bash`, `ls`, `grep`, `find` (via explicit re-registration in `index.ts`)
@@ -20,7 +20,7 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - `KNOWN_TOOLS` set tracks all registered Pi tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `web_search`, `web_fetch`, `fetch_content`, `get_search_content`, `run_command`, `manage_task`, `schedule`, `subagent`, `todo`, `powershell`, `questions`, `video_extract`, `skill_manage`, `plan`, `memory`, `memory_search`, `session_search`
 
 ## Work Guidance
-- Context-aware spacing: adds empty line before user messages when previous message was assistant (not before tools within same turn)
+- Uniform spacing: each `AssistantMessageComponent`, `UserMessageComponent`, and `ToolExecutionComponent` render prepends one blank line; `Container.prototype.addChild` dynamically patches streaming/message-like components the same way and blocks native Spacers / stray empty-string components to avoid double gaps
 - Collapsed view shows two lines:
   1. `tool [args] (ctrl+o to expand)` — orange tool name, truncated args
   2. `⎿ summary (N lines)` — dimmed summary with line/task count (or `⎿ failed tool call` on error)
@@ -44,12 +44,12 @@ Re-registers built-in tools with compact visual rendering (single-line calls, ex
 - Press ctrl+o — verify expanded view with output
 - Run bash with >5 lines output — verify truncation message
 - Verify thinking blocks render with proper styling
-- Verify spacing after assistant messages and before user prompts
-- Verify no extra spacing above tool calls
+- Verify one blank line above every chat message and every tool output
+- Verify the gap line is not indented by the status-dot patch
 
 ## File Structure
 - `index.ts` — Main entry: imports modules, wires event hooks, re-registers read/write/edit/bash/ls/grep/find tools
-- `rendering.ts` — Shared rendering primitives: `line`, `noOp`, `orange`, `compactCall`, `expandedBox`, `diffExpandedBox`, `wrapWithPrefix`, `formatDur`, `captureResult`
+- `rendering.ts` — Shared rendering primitives: `line`, `spacer`, `noOp`, `orange`, `compactCall`, `expandedBox`, `diffExpandedBox`, `wrapWithPrefix`, `formatDur`, `captureResult`
 - `patch-tools.ts` — Tool patching: `patchTool` function, `KNOWN_TOOLS`, `TRUNCATED_TOOLS`, special-case handlers for todo/questions/powershell/run_command/web_search/web_fetch/manage_task/schedule
 - `thinking-block.ts` — `ThinkingBlock` component class, `initHideThinking`, `colorThinkingText`, `italicText`
 - `assistant-footer.ts` — `initAssistantFooter`: appends "✻ Worked for Xs" to assistant messages

@@ -23,7 +23,7 @@ import {
   createReadTool,
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
-import { Markdown, Text } from "@earendil-works/pi-tui";
+import { Markdown, Text, Container, Spacer, truncateToWidth } from "@earendil-works/pi-tui";
 
 import {
   line, noOp, orange, compactCall, compactSummary, compactFailed,
@@ -31,6 +31,7 @@ import {
 } from "./rendering.js";
 import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tools.js";
 import { ThinkingBlock, colorThinkingText, italicText, initHideThinking } from "./thinking-block.js";
+import { registerTools } from "./register-tools.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
 import { initToolStatusDot } from "./tool-status-dot.js";
@@ -76,6 +77,8 @@ export default function (pi: ExtensionAPI) {
   // Expose patchTool globally as fallback for fresh pi objects
   (globalThis as any).__pi_patchTool = patchTool;
 
+
+  
   // ── Patch UI Components ─────────────────────────────────────────────
   if (!patchedAssistant) {
     try {
@@ -83,16 +86,23 @@ export default function (pi: ExtensionAPI) {
           !(InteractiveMode.prototype.addMessageToChat as any).__compactui_patched) {
         const originalAdd = InteractiveMode.prototype.addMessageToChat;
         InteractiveMode.prototype.addMessageToChat = function (message: any, options?: any) {
-          // Add spacing before user message
-          if (message.role === "user") {
-            this.chatContainer.addChild(line(""));
-          }
-
           const originalAddChild = this.chatContainer.addChild;
-          this.chatContainer.addChild = function (child: any) {
-            if (child && child.constructor && child.constructor.name === "Spacer") return;
-            return originalAddChild.apply(this, arguments);
+          let lastSpacerArgs: any[] | null = null;
+          this.chatContainer.addChild = function (...args: any[]) {
+            if (lastSpacerArgs) {
+              originalAddChild.apply(this, lastSpacerArgs);
+              lastSpacerArgs = null;
+            }
+            if (args.length > 0 && args[0] && typeof args[0].render === "function") {
+              const lines = args[0].render();
+              if (lines.length === 1 && lines[0].trim() === "") {
+                lastSpacerArgs = args;
+                return;
+              }
+            }
+            return originalAddChild.apply(this, args);
           };
+
           let result;
           try {
             result = originalAdd.call(this, message, options);
@@ -104,213 +114,28 @@ export default function (pi: ExtensionAPI) {
         (InteractiveMode.prototype.addMessageToChat as any).__compactui_patched = true;
       }
 
-      // ── Patch AssistantMessageComponent.updateContent ────────────────
-      AssistantMessageComponent.prototype.updateContent = function (message: any) {
-        this.lastMessage = message;
-        this.contentContainer.clear();
-
-        let hasThinking = false;
-        for (let i = 0; i < message.content.length; i++) {
-          const content = message.content[i];
-          if (content.type === "text" && content.text.trim()) {
-            if (hasThinking) {
-              this.contentContainer.addChild(line(""));
-            }
-            if (content.text) {
-              this.contentContainer.addChild(
-                new Markdown(content.text.trim(), 1, 0, this.markdownTheme)
-              );
-            }
-          } else if (
-            content.type === "thinking" &&
-            content.thinking &&
-            content.thinking.trim()
-          ) {
-            hasThinking = true;
-
-            if (!content._clientStartTime) {
-              content._clientStartTime = Date.now();
-            }
-
-            const hasVisibleContentAfter = message.content
-              .slice(i + 1)
-              .some(
-                (c: any) =>
-                  (c.type === "text" && c.text && c.text.trim()) ||
-                  (c.type === "thinking" && c.thinking && c.thinking.trim()) ||
-                  c.type === "toolCall"
-              );
-
-            const isThinkingDone = hasVisibleContentAfter || message.stopReason;
-
-            if (isThinkingDone && !content._clientEndTime) {
-              content._clientEndTime = Date.now();
-            }
-
-            if (isThinkingDone) {
-              let durationS = 0;
-              if (typeof content.durationMs === "number") {
-                durationS = Math.round(content.durationMs / 1000);
-              } else if (
-                content._clientEndTime &&
-                content._clientStartTime &&
-                content._clientEndTime - content._clientStartTime > 100
-              ) {
-                content.durationMs =
-                  content._clientEndTime - content._clientStartTime;
-                durationS = Math.round(content.durationMs / 1000);
-              } else if (content._clientStartTime) {
-                const fallbackDuration =
-                  Date.now() - content._clientStartTime;
-                if (fallbackDuration > 100) {
-                  content.durationMs = fallbackDuration;
-                  durationS = Math.round(fallbackDuration / 1000);
-                }
-              }
-
-              durationS = Math.max(0, durationS);
-              this.hiddenThinkingLabel =
-                durationS > 0
-                  ? `\u2717 Thought for ${durationS}s`
-                  : `\u2717 Thought`;
-            } else {
-              this.hiddenThinkingLabel = "\u2717  Thinking...";
-            }
-
-            if (this.hideThinkingBlock) {
-              this.contentContainer.addChild(
-                new Text(
-                  italicText(colorThinkingText(this.hiddenThinkingLabel)),
-                  1,
-                  0
-                )
-              );
-            } else {
-              this.contentContainer.addChild(
-                new ThinkingBlock(content.thinking.trim(), 1, 0, this.markdownTheme, {
-                  color: colorThinkingText,
-                  italic: true,
-                })
-              );
-            }
-          }
-        }
-
-        const hasToolCalls = message.content.some(
-          (c: any) => c.type === "toolCall"
-        );
-        this.hasToolCalls = hasToolCalls;
-        if (!hasToolCalls) {
-          if (message.stopReason === "aborted") {
-            const abortMessage =
-              message.errorMessage && message.errorMessage !== "Request was aborted"
-                ? message.errorMessage
-                : "Operation aborted";
-            this.contentContainer.addChild(
-              new Text(`\x1b[38;2;255;85;85m${abortMessage}\x1b[39m`, 1, 0)
-            );
-          } else if (message.stopReason === "error") {
-            const errorMsg = message.errorMessage || "Unknown error";
-            this.contentContainer.addChild(
-              new Text(`\x1b[38;2;255;85;85mError: ${errorMsg}\x1b[39m`, 1, 0)
-            );
-          }
-        }
-      };
-
-      // ── Patch InteractiveMode.syncMessages ───────────────────────────
       if (
         InteractiveMode &&
         InteractiveMode.prototype.syncMessages &&
         !InteractiveMode.prototype.syncMessages.__compactui_patched
       ) {
-        // Patch ToolExecutionComponent.render for lazy tool patching + spacer removal
-        if (
-          ToolExecutionComponent &&
-          ToolExecutionComponent.prototype.render &&
-          !ToolExecutionComponent.prototype.render.__compactui_patched
-        ) {
-          const originalRender = ToolExecutionComponent.prototype.render;
-          ToolExecutionComponent.prototype.render = function () {
-            let needsUpdate = false;
-            if (
-              this.toolDefinition &&
-              typeof (globalThis as any).__pi_patchTool === "function"
-            ) {
-              if (!this.toolDefinition.__compactui_patched) {
-                (globalThis as any).__pi_patchTool(this.toolDefinition);
-                needsUpdate = true;
-              }
-            }
-            if (
-              this.builtInToolDefinition &&
-              typeof (globalThis as any).__pi_patchTool === "function"
-            ) {
-              if (!this.builtInToolDefinition.__compactui_patched) {
-                (globalThis as any).__pi_patchTool(this.builtInToolDefinition);
-                needsUpdate = true;
-              }
-            }
-
-            // Remove native Spacers at the top of tool components
-            if (this.children && this.children.length > 0) {
-              while (
-                this.children.length > 0 &&
-                this.children[0].constructor.name === "Spacer"
-              ) {
-                this.children.shift();
-              }
-              // Also remove native Spacers at the bottom
-              while (
-                this.children.length > 0 &&
-                this.children[this.children.length - 1].constructor.name === "Spacer"
-              ) {
-                this.children.pop();
-              }
-            }
-
-            if (needsUpdate && typeof this.updateDisplay === "function") {
-              this.updateDisplay();
-            }
-            const lines = originalRender.apply(this, arguments);
-            // Strip leading empty lines
-            while (lines.length > 0 && typeof lines[0] === "string" && lines[0].replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "").trim() === "") {
-              lines.shift();
-            }
-            // Strip trailing empty lines
-            while (lines.length > 0 && typeof lines[lines.length - 1] === "string" && lines[lines.length - 1].replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "").trim() === "") {
-              lines.pop();
-            }
-            
-            return lines;
-          };
-          ToolExecutionComponent.prototype.render.__compactui_patched = true;
-        }
-
-        // Patch syncMessages to block native Spacers
         const originalSyncMessages = InteractiveMode.prototype.syncMessages;
         InteractiveMode.prototype.syncMessages = function () {
           const originalAddChild = this.chatContainer.addChild;
-          this.chatContainer.addChild = function (child: any) {
-            if (!child) return;
-            if (child.constructor && child.constructor.name === "Spacer") return;
-            
-            // Also block components that just render as an empty string (like line(""))
-            if (typeof child.render === "function") {
-              try {
-                const testRender = child.render(80);
-                if (
-                  Array.isArray(testRender) && 
-                  testRender.length === 1 && 
-                  typeof testRender[0] === "string" && 
-                  testRender[0].replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "").trim() === ""
-                ) {
-                  return;
-                }
-              } catch (e) {}
+          let lastSpacerArgs: any[] | null = null;
+          this.chatContainer.addChild = function (...args: any[]) {
+            if (lastSpacerArgs) {
+              originalAddChild.apply(this, lastSpacerArgs);
+              lastSpacerArgs = null;
             }
-            
-            return originalAddChild.apply(this, arguments);
+            if (args.length > 0 && args[0] && typeof args[0].render === "function") {
+              const lines = args[0].render();
+              if (lines.length === 1 && lines[0].trim() === "") {
+                lastSpacerArgs = args;
+                return;
+              }
+            }
+            return originalAddChild.apply(this, args);
           };
 
           let result;
@@ -322,167 +147,259 @@ export default function (pi: ExtensionAPI) {
           return result;
         };
         InteractiveMode.prototype.syncMessages.__compactui_patched = true;
-
-        // Patch toggleToolOutputExpansion
-        const originalToggleExpand =
-          InteractiveMode.prototype.toggleToolOutputExpansion;
-        if (
-          originalToggleExpand &&
-          !InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched
-        ) {
-          InteractiveMode.prototype.toggleToolOutputExpansion = function () {
-            const scroll =
-              this.chatContainer &&
-              typeof this.chatContainer.getScroll === "function"
-                ? this.chatContainer.getScroll()
-                : undefined;
-
-            originalToggleExpand.apply(this, arguments);
-
-            this.hideThinkingBlock = !this.hideThinkingBlock;
-            if (
-              this.settingsManager &&
-              typeof this.settingsManager.setHideThinkingBlock === "function"
-            ) {
-              this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
-            }
-            if (this.chatContainer) {
-              this.chatContainer.clear();
-            }
-            if (typeof this.rebuildChatFromMessages === "function") {
-              this.rebuildChatFromMessages();
-            }
-            if (
-              this.streamingComponent &&
-              this.streamingMessage &&
-              this.chatContainer
-            ) {
-              if (
-                typeof this.streamingComponent.setHideThinkingBlock ===
-                "function"
-              ) {
-                this.streamingComponent.setHideThinkingBlock(
-                  this.hideThinkingBlock
-                );
-              }
-              if (
-                typeof this.streamingComponent.updateContent === "function"
-              ) {
-                this.streamingComponent.updateContent(this.streamingMessage);
-              }
-              this.chatContainer.addChild(this.streamingComponent);
-            }
-            if (typeof this.showStatus === "function") {
-              this.showStatus("Tools & Thinking toggled");
-            }
-
-            if (
-              scroll !== undefined &&
-              this.chatContainer &&
-              typeof this.chatContainer.setScroll === "function"
-            ) {
-              setTimeout(() => {
-                if (
-                  this.chatContainer &&
-                  typeof this.chatContainer.setScroll === "function"
-                ) {
-                  this.chatContainer.setScroll(scroll);
-                }
-                if (
-                  this.ui &&
-                  typeof this.ui.requestRender === "function"
-                ) {
-                  this.ui.requestRender();
-                }
-              }, 10);
-            }
-          };
-          InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched = true;
-        }
-
-        // Patch toggleThinkingBlockVisibility
-        const originalToggleThinking =
-          InteractiveMode.prototype.toggleThinkingBlockVisibility;
-        if (
-          originalToggleThinking &&
-          !InteractiveMode.prototype.toggleThinkingBlockVisibility
-            .__compactui_patched
-        ) {
-          InteractiveMode.prototype.toggleThinkingBlockVisibility = function () {
-            const scroll =
-              this.chatContainer &&
-              typeof this.chatContainer.getScroll === "function"
-                ? this.chatContainer.getScroll()
-                : undefined;
-
-            if (typeof this.cycleThinkingLevel === "function") {
-              this.cycleThinkingLevel();
-            }
-
-            if (
-              scroll !== undefined &&
-              this.chatContainer &&
-              typeof this.chatContainer.setScroll === "function"
-            ) {
-              setTimeout(() => {
-                if (
-                  this.chatContainer &&
-                  typeof this.chatContainer.setScroll === "function"
-                ) {
-                  this.chatContainer.setScroll(scroll);
-                }
-                if (
-                  this.ui &&
-                  typeof this.ui.requestRender === "function"
-                ) {
-                  this.ui.requestRender();
-                }
-              }, 10);
-            }
-          };
-          InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched = true;
-        }
-
-        // Patch cycleThinkingLevel
-        const originalCycleThinking =
-          InteractiveMode.prototype.cycleThinkingLevel;
-        if (
-          originalCycleThinking &&
-          !InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched
-        ) {
-          InteractiveMode.prototype.cycleThinkingLevel = function () {
-            const scroll =
-              this.chatContainer &&
-              typeof this.chatContainer.getScroll === "function"
-                ? this.chatContainer.getScroll()
-                : undefined;
-
-            originalCycleThinking.apply(this, arguments);
-
-            if (
-              scroll !== undefined &&
-              this.chatContainer &&
-              typeof this.chatContainer.setScroll === "function"
-            ) {
-              setTimeout(() => {
-                if (
-                  this.chatContainer &&
-                  typeof this.chatContainer.setScroll === "function"
-                ) {
-                  this.chatContainer.setScroll(scroll);
-                }
-                if (
-                  this.ui &&
-                  typeof this.ui.requestRender === "function"
-                ) {
-                  this.ui.requestRender();
-                }
-              }, 10);
-            }
-          };
-          InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched = true;
-        }
       }
+
+      // ── Patch AssistantMessageComponent.updateContent ────────────────
+      if (
+        AssistantMessageComponent &&
+        AssistantMessageComponent.prototype.updateContent &&
+        !(AssistantMessageComponent.prototype.updateContent as any).__compactui_patched
+      ) {
+        AssistantMessageComponent.prototype.updateContent = function (message: any) {
+          this.lastMessage = message;
+          this.contentContainer.clear();
+
+          let hasThinking = false;
+          for (let i = 0; i < message.content.length; i++) {
+            const content = message.content[i];
+            if (content.type === "text" && content.text.trim()) {
+              if (hasThinking) {
+                this.contentContainer.addChild(line(""));
+              }
+              if (content.text) {
+                let text = content.text.trim();
+                // Clean up garbage literal ANSI escapes and markdown-escaped ANSI from history
+                text = text.replace(/\\x1b\[[0-9;]*m/g, "");
+                text = text.replace(/\x1b\[[0-9;]*m/g, "");
+                text = text.replace(/\\?\[\[?38;2;140;140;140m/g, "");
+                text = text.replace(/\\?\[0m/g, "");
+                text = text.replace(/\\?\[39m/g, "");
+
+                const footerMarker = "✻ Worked for";
+                const markerIndex = text.lastIndexOf(footerMarker);
+                
+                if (markerIndex !== -1 && markerIndex >= text.length - 200) {
+                   const footerText = text.substring(markerIndex).trim();
+                   text = text.substring(0, markerIndex).trim();
+                   // Also remove any older duplicate markers from the body
+                   text = text.replace(/✻ Worked for[^\n]*/g, "").trim();
+                   text = text.replace(/✦ Worked for[^\n]*/g, "").trim();
+                   
+                   if (text) {
+                     this.contentContainer.addChild(
+                       new Markdown(text, 1, 0, this.markdownTheme)
+                     );
+                   }
+                   this.contentContainer.addChild(line(""));
+                   this.contentContainer.addChild(
+                     new Text(`\x1b[38;2;140;140;140m${footerText}\x1b[0m`, 1, 0)
+                   );
+                } else {
+                   // Clean up duplicates even if it's not at the end
+                   text = text.replace(/✻ Worked for[^\n]*/g, "").trim();
+                   text = text.replace(/✦ Worked for[^\n]*/g, "").trim();
+                   if (text) {
+                     this.contentContainer.addChild(
+                       new Markdown(text, 1, 0, this.markdownTheme)
+                     );
+                   }
+                }
+              }
+            } else if (
+              content.type === "thinking" &&
+              content.thinking &&
+              content.thinking.trim()
+            ) {
+              hasThinking = true;
+              let tText = content.thinking.trim();
+              this.contentContainer.addChild(line("")); // Add spacing above thinking
+              this.contentContainer.addChild(
+                new ThinkingBlock(tText, 1, 0, undefined, { color: colorThinkingText, italic: true })
+              );
+            }
+          }
+
+          const hasToolCalls = message.content.some((c: any) => c.type === "tool_use");
+          
+          if (!hasToolCalls) {
+            if (message.stopReason === "aborted") {
+              const abortMessage =
+                message.errorMessage && message.errorMessage !== "Request was aborted"
+                  ? message.errorMessage
+                  : "Operation aborted";
+              this.contentContainer.addChild(
+                new Text(`\x1b[38;2;255;85;85m${abortMessage}\x1b[39m`, 1, 0)
+              );
+            } else if (message.stopReason === "error") {
+              const errorMsg = message.errorMessage || "Unknown error";
+              this.contentContainer.addChild(
+                new Text(`\x1b[38;2;255;85;85mError: ${errorMsg}\x1b[39m`, 1, 0)
+              );
+            }
+          }
+        };
+        (AssistantMessageComponent.prototype.updateContent as any).__compactui_patched = true;
+      }
+
+      // ── Patch ToolExecutionComponent.render ────────────────────────
+      if (
+        ToolExecutionComponent &&
+        ToolExecutionComponent.prototype.render &&
+        !ToolExecutionComponent.prototype.render.__compactui_patched
+      ) {
+        const originalRender = ToolExecutionComponent.prototype.render;
+        ToolExecutionComponent.prototype.render = function () {
+          const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
+          if (this.toolName && !knownTools.includes(this.toolName)) {
+            if (!this.expanded) {
+              const dummyTheme = {
+                fg: (color: string, text: string) => color === "dim" ? `\x1b[90m${text}\x1b[39m` : text
+              };
+              const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
+              
+              // Keep a spacer at the top to match default ToolExecutionComponent spacing
+              const resultLines = [""];
+              
+              const callComp = compactCall(this.toolName, argsStr, dummyTheme);
+              resultLines.push(...callComp.render(100));
+              
+              if (this.result) {
+                if (this.result.isError) {
+                  resultLines.push(...compactFailed(dummyTheme).render(100));
+                } else {
+                  const fullText = this.result.content?.[0]?.text || "";
+                  const lineCount = fullText ? fullText.split("\n").length : 0;
+                  resultLines.push(...compactSummary(dummyTheme, `${this.toolName} output`, lineCount, "line").render(100));
+                }
+              }
+              return resultLines;
+            }
+          }
+          return originalRender.apply(this, arguments);
+        };
+        ToolExecutionComponent.prototype.render.__compactui_patched = true;
+      }
+
+      // Patch toggleToolOutputExpansion
+      const originalToggleExpand =
+        InteractiveMode.prototype.toggleToolOutputExpansion;
+      if (
+        originalToggleExpand &&
+        !InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched
+      ) {
+        InteractiveMode.prototype.toggleToolOutputExpansion = function () {
+          const scroll =
+            this.chatContainer &&
+            typeof this.chatContainer.getScroll === "function"
+              ? this.chatContainer.getScroll()
+              : undefined;
+
+          originalToggleExpand.apply(this, arguments);
+
+          if (
+            scroll !== undefined &&
+            this.chatContainer &&
+            typeof this.chatContainer.setScroll === "function"
+          ) {
+            setTimeout(() => {
+              if (
+                this.chatContainer &&
+                typeof this.chatContainer.setScroll === "function"
+              ) {
+                this.chatContainer.setScroll(scroll);
+              }
+              if (
+                this.ui &&
+                typeof this.ui.requestRender === "function"
+              ) {
+                this.ui.requestRender();
+              }
+            }, 10);
+          }
+        };
+        InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched = true;
+      }
+
+      // Patch toggleThinkingBlockVisibility
+      const originalToggleThinking =
+        InteractiveMode.prototype.toggleThinkingBlockVisibility;
+      if (
+        originalToggleThinking &&
+        !InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched
+      ) {
+        InteractiveMode.prototype.toggleThinkingBlockVisibility = function () {
+          const scroll =
+            this.chatContainer &&
+            typeof this.chatContainer.getScroll === "function"
+              ? this.chatContainer.getScroll()
+              : undefined;
+
+          originalToggleThinking.apply(this, arguments);
+
+          if (
+            scroll !== undefined &&
+            this.chatContainer &&
+            typeof this.chatContainer.setScroll === "function"
+          ) {
+            setTimeout(() => {
+              if (
+                this.chatContainer &&
+                typeof this.chatContainer.setScroll === "function"
+              ) {
+                this.chatContainer.setScroll(scroll);
+              }
+              if (
+                this.ui &&
+                typeof this.ui.requestRender === "function"
+              ) {
+                this.ui.requestRender();
+              }
+            }, 10);
+          }
+        };
+        InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched = true;
+      }
+
+      // Patch cycleThinkingLevel
+      const originalCycleThinking =
+        InteractiveMode.prototype.cycleThinkingLevel;
+      if (
+        originalCycleThinking &&
+        !InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched
+      ) {
+        InteractiveMode.prototype.cycleThinkingLevel = function () {
+          const scroll =
+            this.chatContainer &&
+            typeof this.chatContainer.getScroll === "function"
+              ? this.chatContainer.getScroll()
+              : undefined;
+
+          originalCycleThinking.apply(this, arguments);
+
+          if (
+            scroll !== undefined &&
+            this.chatContainer &&
+            typeof this.chatContainer.setScroll === "function"
+          ) {
+            setTimeout(() => {
+              if (
+                this.chatContainer &&
+                typeof this.chatContainer.setScroll === "function"
+              ) {
+                this.chatContainer.setScroll(scroll);
+              }
+              if (
+                this.ui &&
+                typeof this.ui.requestRender === "function"
+              ) {
+                this.ui.requestRender();
+              }
+            }, 10);
+          }
+        };
+        InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched = true;
+      }
+
 
       patchedAssistant = true;
     } catch (e) {

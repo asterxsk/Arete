@@ -3,8 +3,7 @@
  *
  * Lifecycle controller for Pi's `setWidget` contract: factory-form
  * registration in widgetContainerAbove, register-once + requestRender()
- * refresh, 12-line collapse-not-scroll (plus a trailing spacer row, so the
- * widget renders up to 13 lines), auto-hide when empty.
+ * refresh, 12-line collapse-not-scroll, auto-hide when empty.
  *
  * Reads live state via `getState()` at render time — NEVER `replayFromBranch`
  * from `tool_execution_end` (branch is stale; `message_end` runs after).
@@ -18,8 +17,9 @@ import { getState } from "./state/store.js";
 import { formatOverlayTaskLine } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
-// Budget for content rows (heading + tasks/summary). The rendered widget is
-// one line taller — withTrailingSpacer() appends a blank row below the panel.
+// Budget for content rows (heading + tasks/summary). When overflow is detected,
+// a blank separator line is inserted between the task list and the "+N more"
+// summary line.
 const MAX_WIDGET_LINES = 12;
 
 // English fallbacks for localized overlay chrome strings.
@@ -131,10 +131,7 @@ export class TodoOverlay {
 		const hasActive = selectHasActive(overlayState);
 		const showIds = selectShowTaskIds(overlayState);
 
-		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
-		const heading = truncate(` ${theme.fg("accent", "✻")} ${theme.fg("accent", headingText)}`);
-
-		const lines: string[] = [heading];
+		const lines: string[] = [];
 		const layout = selectOverlayLayout(overlayState, MAX_WIDGET_LINES - 1);
 		for (let i = 0; i < layout.visible.length; i++) {
 			const prefix = i === 0 ? " └ " : "   ";
@@ -154,7 +151,7 @@ export class TodoOverlay {
 		}
 
 		if (layout.hiddenCompleted === 0 && layout.truncatedTail === 0) {
-			return this.withTrailingSpacer(lines);
+			return lines;
 		}
 
 		const totalHidden = layout.hiddenCompleted + layout.truncatedTail;
@@ -164,22 +161,12 @@ export class TodoOverlay {
 		const more = t("overlay.more", OVERLAY_MORE);
 		const summary =
 			overflowParts.length > 0 ? `+${totalHidden} ${more} (${overflowParts.join(", ")})` : `+${totalHidden} ${more}`;
-		lines.push(truncate(` ${theme.fg("dim", "└")} ${theme.fg("dim", summary)}`));
-		return this.withTrailingSpacer(lines);
-	}
-
-	/**
-	 * Append a trailing blank line so the overlay isn't flush against the
-	 * editor box. Pi's host adds a leading spacer above the widget but none
-	 * below, which leaves the last "└─" row (or the "+N more" summary) glued
-	 * to the input box. The empty string gives the "Todos" panel a little
-	 * breathing room.
-	 */
-	private withTrailingSpacer(lines: string[]): string[] {
-		if (lines.length === 0) return lines;
 		lines.push("");
+		lines.push(truncate(` ${theme.fg("dim", "└")} ${theme.fg("dim", summary)}`));
 		return lines;
 	}
+
+
 
 	dispose(): void {
 		if (this.uiCtx) this.uiCtx.setWidget(WIDGET_KEY, undefined);

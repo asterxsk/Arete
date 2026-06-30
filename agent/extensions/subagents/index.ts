@@ -39,8 +39,8 @@ class CompactToolBox implements Component {
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
 		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways, duration } = this.opts;
 		const lines: string[] = [];
-		const star = state === "pending" ? "\x1b[32m✻\x1b[0m" : state === "error" ? "\x1b[31m✻\x1b[0m" : "\x1b[37m✻\x1b[0m";
-		let header = ` ${star} \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
+		const star = "";
+		let header = `\x1b[38;2;255;165;0m${toolName}\x1b[0m`;
 		if (suffix) header += ` ${suffix}`;
 		lines.push(truncateToWidth(header, width));
 		if (expanded) {

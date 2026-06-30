@@ -6,6 +6,7 @@
  */
 
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 const DOT_PATCH = Symbol.for("pi-agent:patched-dot");
 const RESET = "\x1b[0m";
@@ -85,7 +86,8 @@ export function initToolStatusDot(): void {
                 if (raw.startsWith(" ")) raw = raw.substring(1);
                 lines[i] = " " + dot.trim() + " " + raw;
                 found = true;
-            } else {
+            } else if (lines[i] !== "") {
+                // preserve intentional empty spacing lines, only indent non-empty padding
                 lines[i] = "  " + lines[i];
             }
         } else {
@@ -109,9 +111,9 @@ export function initToolStatusDot(): void {
       }
     }
 
-    lines.push("");
-    return lines;
+    return width !== undefined ? lines.map(l => typeof l === "string" ? truncateToWidth(l, width) : l) : lines;
   };
 
   proto[DOT_PATCH] = true;
+  (proto.render as any).__compactui_spacer_patched = true;
 }

@@ -131,7 +131,7 @@ export function initHideThinking(pi: ExtensionAPI): void {
 
       const display = fullOriginal.replace(THINK_TAG_RE, (match: string) => {
         const inner = match.slice(8, -9);
-        return "\n\n" + dim(inner);
+        return "\n" + dim(inner);
       });
 
       block.text = display;
@@ -151,7 +151,7 @@ export function initHideThinking(pi: ExtensionAPI): void {
 
       block.text = original.replace(THINK_TAG_RE, (match: string) => {
         const inner = match.slice(8, -9);
-        return "\n\n" + dim(lastNLines(inner, 5));
+        return "\n" + dim(lastNLines(inner, 5));
       });
     }
   });
