@@ -4,11 +4,12 @@
 # Un-ignore specific root files
 !.gitignore
 !AGENTS.md
-!README.md
 !install.sh
 !install.ps1
 !LICENSE
+!README.md
 !version.txt
+!web-search.json
 
 # Un-ignore agent folder
 !agent/
