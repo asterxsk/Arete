@@ -29,7 +29,7 @@ import { Markdown, Text, Container, Spacer, truncateToWidth } from "@earendil-wo
 
 import {
   line, noOp, orange, compactCall, compactSummary, compactFailed,
-  formatDur, expandedBox, diffExpandedBox, captureResult, INDENT,
+  formatDur, expandedBox, diffExpandedBox, captureResult, INDENT, DIM_GREY,
 } from "./rendering.js";
 import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tools.js";
 import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
@@ -59,13 +59,14 @@ let patchedAssistant = false;
 // immune to any reference-identity gotchas that would cause the entry
 // to be missed.
 //
-// While the message is still streaming (no `stopReason`), we use the live
-// elapsed time so the hidden label shows a live counter from the moment
-// Ctrl+T is pressed. Once the agent finishes and sets `stopReason`, the
-// verb flips to `Thought for Ns` — no dependency on the message_end event
-// handler. For entries we never tracked (pre-existing entries from disk
-// or messages that already had stopReason when first seen), we fall back
-// to `✻ Thought...`.
+// While the message is still streaming, we use the live elapsed time so the
+// hidden label shows a live counter from the moment Ctrl+T is pressed. The
+// verb flips to `Thought for Ns` when either:
+//   1. `endMs` is set by the message_end event handler, or
+//   2. `stopReason` is set on the message (provider-dependent).
+// Checking both gives us coverage regardless of provider. For entries we
+// never tracked (pre-existing entries from disk or messages that already
+// had stopReason when first seen), we fall back to `✻ Thought...`.
 
 const THINKING_TIMING_KEY = Symbol.for("compactui.nativeThinkingTiming");
 
@@ -111,7 +112,11 @@ function getNativeThinkingLabel(message: object, fallback: string): string {
   // than the upstream framework's "Thought for <1s".
   const durMs = (timing.endMs ?? Date.now()) - timing.startMs;
   const secs = Math.max(1, Math.round(durMs / 1000));
-  const hasEnded = !!(message as any).stopReason;
+  // The verb flips to "Thought" when either:
+  // - endMs was set by the message_end event handler (most reliable)
+  // - stopReason is set on the message (provider-dependent; minimax may
+  //   omit it). Checking both gives us coverage regardless of provider.
+  const hasEnded = !!(timing.endMs ?? (message as any).stopReason);
   return hasEnded ? `Thought for ${secs}s` : `Thinking for ${secs}s`;
 }
 
@@ -396,9 +401,8 @@ export default function (pi: ExtensionAPI) {
           const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
           if (this.toolName && !knownTools.includes(this.toolName)) {
             if (!this.expanded) {
-              const DUMMY_DIM = "\x1b[38;2;140;140;140m";
               const dummyTheme = {
-                fg: (color: string, text: string) => color === "dim" ? `${DUMMY_DIM}${text}\x1b[39m` : text
+                fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
               };
               const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
               

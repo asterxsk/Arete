@@ -11,6 +11,7 @@ import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from 
 
 export const INDENT = " "; // Single space indent for tools
 export const HINT = " (ctrl+o to expand)";
+export const DIM_GREY = "\x1b[38;2;140;140;140m"; // Consistent dim color for all tool summaries
 
 // ── Component Factories ────────────────────────────────────────────────
 
@@ -51,16 +52,16 @@ export function compactCall(toolName: string, argsStr: string, theme: any): Comp
   const maxDisplay = 40;
   if (display.length > maxDisplay) display = display.slice(0, maxDisplay - 3) + "...";
   else if (display.length < argsStr.length) display += "...";
-  return line(INDENT + orange(theme, toolName) + " [" + display + "]" + theme.fg("dim", HINT));
+  return line(INDENT + orange(theme, toolName) + " [" + display + "]" + DIM_GREY + HINT + "\x1b[39m");
 }
 
 export function compactSummary(theme: any, summary: string, count: number, unit: string): Component {
   const countStr = count > 0 ? ` (${count} ${unit}${count !== 1 ? "s" : ""})` : "";
-  return line(INDENT + theme.fg("dim", "\u23bf " + summary + countStr));
+  return line(INDENT + DIM_GREY + "\u23bf " + summary + countStr + "\x1b[39m");
 }
 
 export function compactFailed(theme: any): Component {
-  return line(INDENT + theme.fg("dim", "\u23bf failed tool call"));
+  return line(INDENT + DIM_GREY + "\u23bf failed tool call" + "\x1b[39m");
 }
 
 export function formatDur(s: number): string {
@@ -124,14 +125,14 @@ export function expandedBox(theme: any, headerName: string, argsLine: string, li
   }
 
   if (hasMore) {
-    raw.push(INDENT + CONTENT_INDENT + theme.fg("dim", "... " + (lines.length - limit) + " more"));
+    raw.push(INDENT + CONTENT_INDENT + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
   }
 
   // Footer with duration
   if (durationS >= 0) {
-    raw.push(INDENT + padding + "\u2514 " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "Took " + formatDur(durationS) + " [ctrl+o to hide]\x1b[39m");
   } else {
-    raw.push(INDENT + padding + "\u2514 " + theme.fg("dim", "[ctrl+o to hide]"));
+    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "[ctrl+o to hide]\x1b[39m");
   }
 
   // Store plain text version for copy/paste
@@ -227,14 +228,14 @@ export function diffExpandedBox(theme: any, headerName: string, argsLine: string
   }
 
   if (hasMore) {
-    raw.push(INDENT + CONTENT_INDENT + theme.fg("dim", "... " + (lines.length - limit) + " more"));
+    raw.push(INDENT + CONTENT_INDENT + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
   }
 
   // Footer with duration
   if (durationS >= 0) {
-    raw.push(INDENT + padding + "\u2514 " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "Took " + formatDur(durationS) + " [ctrl+o to hide]\x1b[39m");
   } else {
-    raw.push(INDENT + padding + "\u2514 " + theme.fg("dim", "[ctrl+o to hide]"));
+    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "[ctrl+o to hide]\x1b[39m");
   }
 
   // Store plain text version for copy/paste

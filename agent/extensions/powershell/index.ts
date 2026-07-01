@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 // ── Compact UI helpers (matches compactui style) ─────────────────────
 const INDENT = "";
 const HINT = " (ctrl+o to expand)";
+const DIM_GREY = "\x1b[38;2;140;140;140m";
 
 function compactLine(text: string): Component {
 	return {
@@ -31,7 +32,7 @@ function compactCall(toolName: string, argsStr: string, theme: any): Component {
 	let display = argsStr.split("\n")[0] ?? argsStr;
 	if (display.length > 50) display = display.slice(0, 47) + "...";
 	else if (display.length < argsStr.length) display += "...";
-	return compactLine(INDENT + orange(theme, toolName) + " [" + display + "]" + theme.fg("dim", HINT));
+	return compactLine(INDENT + orange(theme, toolName) + " [" + display + "]" + DIM_GREY + HINT + "\x1b[39m");
 }
 
 function formatDur(s: number): string {
@@ -94,12 +95,12 @@ function expandedBox(theme: any, headerName: string, argsLine: string, lines: st
 	}
 
 	if (hasMore) {
-		raw.push(INDENT + CONTENT_INDENT + theme.fg("dim", "... " + (lines.length - limit) + " more"));
+		raw.push(INDENT + CONTENT_INDENT + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
 	}
 
 	// Footer with duration
 	if (durationS >= 0) {
-		raw.push(INDENT + padding + "└ " + theme.fg("dim", "Took " + formatDur(durationS) + " [ctrl+o to hide]"));
+		raw.push(INDENT + padding + "└ " + DIM_GREY + "Took " + formatDur(durationS) + " [ctrl+o to hide]\x1b[39m");
 	}
 
 	return {

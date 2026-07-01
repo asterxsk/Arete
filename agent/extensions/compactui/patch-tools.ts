@@ -10,7 +10,7 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import {
   line, noOp, orange, compactCall, compactSummary, compactFailed,
-  formatDur, expandedBox, INDENT, HINT,
+  formatDur, expandedBox, INDENT, HINT, DIM_GREY,
 } from "./rendering.js";
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -46,18 +46,8 @@ class CustomBlock {
 // ── patchTool ──────────────────────────────────────────────────────────
 
 export function patchTool(tool: any): void {
-  const EXCLUDED_TOOLS = new Set(["subagent", "read", "write", "edit", "bash", "ls", "grep", "find", "memory", "memory_search", "session_search"]);
+  const EXCLUDED_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "grep", "find"]);
   if (EXCLUDED_TOOLS.has(tool.name)) return;
-
-  // ── Todo ───────────────────────────────────────────────────────────────
-  if (tool.name === "todo" || tool.name === "manage_todo") {
-    if (tool.__compactui_patched) return;
-    tool.__compactui_patched = true;
-    tool.renderShell = "self";
-    tool.renderCall = () => noOp();
-    tool.renderResult = () => noOp();
-    return;
-  }
 
   // ── Ask Question ───────────────────────────────────────────────────────
   if (tool.name === "ask_question" || tool.name === "ask_questions" || tool.name === "questions" || tool.name === "question") {
@@ -68,7 +58,7 @@ export function patchTool(tool: any): void {
       if (context.expanded) return noOp();
       let count = 1;
       if (args && Array.isArray(args.questions)) count = args.questions.length;
-      return line(INDENT + orange(theme, tool.name) + " [" + `asking ${count} question${count === 1 ? '' : 's'}` + "]" + theme.fg("dim", " (ctrl+o to expand)"));
+      return line(INDENT + orange(theme, tool.name) + " [" + `asking ${count} question${count === 1 ? '' : 's'}` + "]" + DIM_GREY + " (ctrl+o to expand)\x1b[39m");
     };
     tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
       if (result.isError) return compactFailed(theme);
@@ -78,15 +68,15 @@ export function patchTool(tool: any): void {
       }
 
       if (!opts.expanded) {
-        return line(INDENT + theme.fg("dim", `\u23bf answered ${count} question${count === 1 ? '' : 's'}`));
+        return line(INDENT + DIM_GREY + `\u23bf answered ${count} question${count === 1 ? '' : 's'}` + "\x1b[39m");
       } else {
         const res: string[] = [];
         res.push(INDENT + orange(theme, tool.name) + " [questions]");
         const text = result.content?.[0]?.text || "";
         for (const l of text.split('\n')) {
-          if (l.trim()) res.push(INDENT + "  " + theme.fg("dim", "\u2502 ") + l);
+          if (l.trim()) res.push(INDENT + "  " + DIM_GREY + "\u2502 \x1b[39m" + l);
         }
-        res.push(INDENT + "  " + theme.fg("dim", "\u2514 ") + theme.fg("dim", "Took 0.2s [ctrl+o to hide]"));
+        res.push(INDENT + "  " + DIM_GREY + "\u2514 \x1b[39m" + DIM_GREY + "Took 0.2s [ctrl+o to hide]\x1b[39m");
         return new CustomBlock(res) as any;
       }
     };
