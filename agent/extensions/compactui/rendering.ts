@@ -173,16 +173,16 @@ export function expandedBox(theme: any, headerName: string, argsLine: string, li
       const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
       const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
       if (wrappedArgs.length === 0) {
-        result.push(headerPrefix + "]");
+        result.push(truncateToWidth(headerPrefix + "]", width));
       } else {
         for (let i = 0; i < wrappedArgs.length; i++) {
           if (i === 0) {
             const suffix = wrappedArgs.length === 1 ? "]" : "";
-            result.push(headerPrefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(headerPrefix + wrappedArgs[i] + suffix, width));
           } else {
             const prefix = " ".repeat(headerPrefixWidth);
             const suffix = i === wrappedArgs.length - 1 ? "]" : "";
-            result.push(prefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(prefix + wrappedArgs[i] + suffix, width));
           }
         }
       }
@@ -276,16 +276,16 @@ export function diffExpandedBox(theme: any, headerName: string, argsLine: string
       const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
       const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
       if (wrappedArgs.length === 0) {
-        result.push(headerPrefix + "]");
+        result.push(truncateToWidth(headerPrefix + "]", width));
       } else {
         for (let i = 0; i < wrappedArgs.length; i++) {
           if (i === 0) {
             const suffix = wrappedArgs.length === 1 ? "]" : "";
-            result.push(headerPrefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(headerPrefix + wrappedArgs[i] + suffix, width));
           } else {
             const prefix = " ".repeat(headerPrefixWidth);
             const suffix = i === wrappedArgs.length - 1 ? "]" : "";
-            result.push(prefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(prefix + wrappedArgs[i] + suffix, width));
           }
         }
       }
