@@ -114,7 +114,7 @@ export function patchTool(tool: any): void {
       (result as any)._plainText = plainTextLines.join("\n");
 
       const processedLines = lines.map((line: string) => line.startsWith("\u2502") ? " " + line : line);
-      return expandedBox(theme, "powershell", context.args.command ?? "", processedLines, durationS, 50);
+      return expandedBox(theme, "powershell", context.args.command ?? "", processedLines, durationS, 40);
     };
     return;
   }
@@ -137,7 +137,7 @@ export function patchTool(tool: any): void {
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "run_command", context.args.CommandLine ?? "", lines, durationS, 50);
+      return expandedBox(theme, "run_command", context.args.CommandLine ?? "", lines, durationS, 40);
     };
     return;
   }
@@ -160,7 +160,7 @@ export function patchTool(tool: any): void {
         return compactSummary(theme, "read search results", lines.length, "line");
       }
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "web_search", context.args.query ?? "", lines, durationS, 50);
+      return expandedBox(theme, "web_search", context.args.query ?? "", lines, durationS, 40);
     };
     return;
   }
@@ -183,7 +183,7 @@ export function patchTool(tool: any): void {
         return compactSummary(theme, "read web page", lines.length, "line");
       }
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, tool.name, context.args.url ?? "", lines, durationS, 50);
+      return expandedBox(theme, tool.name, context.args.url ?? "", lines, durationS, 40);
     };
     return;
   }
@@ -207,7 +207,7 @@ export function patchTool(tool: any): void {
       }
       const lines = full.split("\n");
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "manage_task", `${context.args.Action} ${context.args.TaskId || ""}`.trim(), lines, durationS, 50);
+      return expandedBox(theme, "manage_task", `${context.args.Action} ${context.args.TaskId || ""}`.trim(), lines, durationS, 40);
     };
     return;
   }
@@ -237,7 +237,7 @@ export function patchTool(tool: any): void {
       let argsLine = "";
       if (context.args.DurationSeconds) argsLine = `${context.args.DurationSeconds}s "${context.args.Prompt}"`;
       else if (context.args.CronExpression) argsLine = `cron "${context.args.CronExpression}" "${context.args.Prompt}"`;
-      return expandedBox(theme, "schedule", argsLine, lines, durationS, 50);
+      return expandedBox(theme, "schedule", argsLine, lines, durationS, 40);
     };
     return;
   }
@@ -267,6 +267,6 @@ export function patchTool(tool: any): void {
     const lines = text.split("\n").filter((l: string) => l.trim());
     const durationS = (result.details as any)?._durationS ?? 0.0;
 
-    return expandedBox(theme, tool.name, argsLine, lines, durationS, 50);
+    return expandedBox(theme, tool.name, argsLine, lines, durationS, 40);
   };
 }

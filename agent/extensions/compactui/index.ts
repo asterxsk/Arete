@@ -80,11 +80,6 @@ function getTiming(message: object): ThinkingTiming | undefined {
 }
 
 function recordNativeThinkingStart(message: object): void {
-  // Skip messages that already have a stopReason — they are pre-existing
-  // entries (loaded from session) and we missed the original streaming
-  // window, so we can't provide accurate timing. Let them fall through to
-  // the "Thought..." fallback.
-  if ((message as any).stopReason) return;
   if (!(message as any)[THINKING_TIMING_KEY]) {
     Object.defineProperty(message, THINKING_TIMING_KEY, {
       value: { startMs: Date.now() },
@@ -843,7 +838,7 @@ export default function (pi: ExtensionAPI) {
       const durationS = (details?._durationS as number) ?? -1;
       const cmd =
         context.args.command || (details?.command as string) || "";
-      return expandedBox(theme, "bash", cmd, lines, durationS, 50);
+      return expandedBox(theme, "bash", cmd, lines, durationS, 40);
     },
   });
 
@@ -878,7 +873,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "ls", context.args.path || ".", lines, durationS, 50);
+      return expandedBox(theme, "ls", context.args.path || ".", lines, durationS, 40);
     },
   });
 
@@ -913,7 +908,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, durationS, 50);
+      return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, durationS, 40);
     },
   });
 
@@ -959,7 +954,7 @@ export default function (pi: ExtensionAPI) {
           (context.args.path ? " " + context.args.path : ""),
         lines,
         durationS,
-        50
+        40
       );
     },
   });

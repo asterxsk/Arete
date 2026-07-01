@@ -205,7 +205,7 @@ export default function (pi: ExtensionAPI) {
 
 			const lines = full.split("\n");
 			const durationS = (details?._durationS as number) ?? -1;
-			return expandedBox(theme, "powershell", _context.args.command || "", lines, durationS, 50);
+			return expandedBox(theme, "powershell", _context.args.command || "", lines, durationS, 40);
 		},
 	});
 }
