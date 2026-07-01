@@ -108,11 +108,11 @@ function buildProgressBar(turns: number, max: number, segments = 10): string {
 
 function getHistoryIcon(outcome: GoalEntry["outcome"]): string {
 	const icons: Record<GoalEntry["outcome"], string> = {
-		accomplished: "✓",
-		cleared: "✕",
-		"max-turns": "⏳",
-		"max-duration": "⏱",
-		cancelled: "⏹",
+		accomplished: "*",
+		cleared: "x",
+		"max-turns": ">",
+		"max-duration": ">",
+		cancelled: "-",
 	};
 	return icons[outcome] ?? "•";
 }
