@@ -32,7 +32,7 @@ import {
   formatDur, expandedBox, diffExpandedBox, captureResult, INDENT,
 } from "./rendering.js";
 import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tools.js";
-import { ThinkingBlock, colorThinkingText, italicText, initHideThinking } from "./thinking-block.js";
+import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
 import { registerTools } from "./register-tools.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
@@ -41,6 +41,79 @@ import { initToolStatusDot } from "./tool-status-dot.js";
 // ── State ──────────────────────────────────────────────────────────────
 
 let patchedAssistant = false;
+
+// ── Native Thinking Duration Tracking ───────────────────────────────────
+//
+// The upstream pi-mono framework (per `docs/plans/thinking.md`) renders
+// native `type: "thinking"` blocks with a duration-aware label:
+//
+//     ✻ Thinking for Ns    (live while streaming; sub-second rounds to 1s)
+//     ✻ Thought for Ns     (locked in after message_end)
+//
+// The user's installed framework version does not expose the per-block
+// duration to extensions, so we track start/end ourselves on the
+// AssistantMessage itself via a non-enumerable Symbol-keyed property. The
+// property travels with the message reference across streaming updates,
+// `message_end`, `_replaceMessageInPlace`, and `buildSessionContext()`
+// rebuilds — so a WeakMap keyed on the message is unnecessary, and
+// immune to any reference-identity gotchas that would cause the entry
+// to be missed.
+//
+// While the message is still streaming (no `stopReason`), we use the live
+// elapsed time so the hidden label shows a live counter from the moment
+// Ctrl+T is pressed. Once the agent finishes and sets `stopReason`, the
+// verb flips to `Thought for Ns` — no dependency on the message_end event
+// handler. For entries we never tracked (pre-existing entries from disk
+// or messages that already had stopReason when first seen), we fall back
+// to `✻ Thought...`.
+
+const THINKING_TIMING_KEY = Symbol.for("compactui.nativeThinkingTiming");
+
+interface ThinkingTiming {
+  startMs: number;
+  endMs?: number;
+}
+
+function getTiming(message: object): ThinkingTiming | undefined {
+  return (message as any)[THINKING_TIMING_KEY] as ThinkingTiming | undefined;
+}
+
+function recordNativeThinkingStart(message: object): void {
+  // Skip messages that already have a stopReason — they are pre-existing
+  // entries (loaded from session) and we missed the original streaming
+  // window, so we can't provide accurate timing. Let them fall through to
+  // the "Thought..." fallback.
+  if ((message as any).stopReason) return;
+  if (!(message as any)[THINKING_TIMING_KEY]) {
+    Object.defineProperty(message, THINKING_TIMING_KEY, {
+      value: { startMs: Date.now() },
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+}
+
+function recordNativeThinkingEnd(message: object): void {
+  const timing = getTiming(message);
+  if (timing) timing.endMs = Date.now();
+}
+
+function getNativeThinkingLabel(message: object, fallback: string): string {
+  const timing = getTiming(message);
+  if (!timing) return fallback;
+  // Use the live elapsed time so the label shows a live counter from the
+  // moment Ctrl+T is pressed. The verb stays "Thinking for Ns" while the
+  // message is still streaming (no stopReason). Once the agent finishes
+  // and sets stopReason ("stop", "toolUse", "length", "error"), the verb
+  // locks to "Thought for Ns" — no dependency on the message_end event.
+  // Sub-second durations round up to "1s" (per user preference) rather
+  // than the upstream framework's "Thought for <1s".
+  const durMs = (timing.endMs ?? Date.now()) - timing.startMs;
+  const secs = Math.max(1, Math.round(durMs / 1000));
+  const hasEnded = !!(message as any).stopReason;
+  return hasEnded ? `Thought for ${secs}s` : `Thinking for ${secs}s`;
+}
 
 // ── Main Extension ─────────────────────────────────────────────────────
 
@@ -104,7 +177,57 @@ export default function (pi: ExtensionAPI) {
           if (chatContainer.__compactui_proactiveSpacerInstalled) return;
           const originalAddChild = chatContainer.addChild;
           let lastSpacerArgs: any[] | null = null;
+          // Hold skill invocation components to reorder them below user message
+          let pendingSkillComponent: any = null;
+          
           chatContainer.addChild = function (...args: any[]) {
+            const component = args[0];
+            
+            // Detect SkillInvocationMessageComponent (skill block)
+            // We identify it by checking for skillBlock property and the component type
+            const isSkillComponent = component && 
+              typeof component === "object" &&
+              component.constructor?.name === "SkillInvocationMessageComponent" &&
+              !component.expanded;
+            
+            if (isSkillComponent) {
+              // Hold back skill component to render after user message
+              pendingSkillComponent = component;
+              return;
+            }
+            
+            // Detect UserMessageComponent (user message)
+            const isUserMessage = component && 
+              typeof component === "object" &&
+              component.constructor?.name === "UserMessageComponent";
+            
+            if (isUserMessage && pendingSkillComponent) {
+              // Flush any held spacer first
+              if (lastSpacerArgs) {
+                originalAddChild.apply(this, lastSpacerArgs);
+                lastSpacerArgs = null;
+              }
+              // User message coming after held skill: render user message first,
+              // then add skill subtitle below it
+              const result = originalAddChild.apply(this, args);
+              // Now add the skill subtitle (no background, compact format)
+              const skillName = pendingSkillComponent.skillBlock?.name || "skill";
+              const hint = " [ctrl+o to expand]";
+              const prefix = "  \u2514 ";
+              const lineText = prefix + skillName + hint;
+              const dimColor = "\x1b[38;2;140;140;140m";
+              const resetColor = "\x1b[39m";
+              const subtitleText = dimColor + lineText + resetColor;
+              // Create a simple line component for the subtitle
+              const subtitleComponent = {
+                render(width: number) { return [subtitleText]; },
+                invalidate() {}
+              };
+              originalAddChild.call(this, subtitleComponent);
+              pendingSkillComponent = null;
+              return result;
+            }
+            
             // Hold back any spacer component so we never render two blank
             // lines back-to-back. It will be flushed before the next
             // non-blank component, or dropped if no such component follows.
@@ -203,6 +326,14 @@ export default function (pi: ExtensionAPI) {
             ) {
               hasThinking = true;
               let tText = content.thinking.trim();
+              // Record the first sighting of a thinking block in this message.
+              // MUST run outside the `hideThinkingBlock` branch so the WeakMap
+              // entry is created during streaming (when thinking is visible)
+              // and available when `message_end` fires. If we only called this
+              // inside the hide branch, the entry would be created fresh at
+              // rebuild time (Ctrl+T toggle), missing the original start time
+              // and never finding an endMs.
+              recordNativeThinkingStart(message);
               // Only inject a separator if thinking isn't the first child of
               // contentContainer. When thinking is first, the proactive
               // chatContainer spacer above the AssistantMessageComponent is
@@ -211,9 +342,24 @@ export default function (pi: ExtensionAPI) {
               if (this.contentContainer.children.length > 0) {
                 this.contentContainer.addChild(line(""));
               }
-              this.contentContainer.addChild(
-                new ThinkingBlock(tText, 1, 0, undefined, { color: colorThinkingText, italic: true })
-              );
+              if (this.hideThinkingBlock) {
+                // Respect Ctrl+T hide toggle: render the duration-aware
+                // hidden label per `docs/plans/thinking.md`. For entries we
+                // never observed (pre-existing sessions / no WeakMap entry),
+                // fall back to `Thought...`. For current entries the label
+                // shows `Thought for Ns` — live during streaming, locked in
+                // after message_end. Color matches the `✻ Worked for Xs`
+                // footer (`assistant-footer.ts`) so both labels look like
+                // siblings: DIM_GREY (`\x1b[38;2;140;140;140m`) with reset.
+                const label = getNativeThinkingLabel(message, "Thought...");
+                this.contentContainer.addChild(
+                  new Text(`\x1b[38;2;140;140;140m✻ ${label}\x1b[0m`, 1, 0)
+                );
+              } else {
+                this.contentContainer.addChild(
+                  new ThinkingBlock(tText, 1, 0, undefined, { color: colorThinkingText, italic: true })
+                );
+              }
             }
           }
 
@@ -250,8 +396,9 @@ export default function (pi: ExtensionAPI) {
           const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
           if (this.toolName && !knownTools.includes(this.toolName)) {
             if (!this.expanded) {
+              const DUMMY_DIM = "\x1b[38;2;140;140;140m";
               const dummyTheme = {
-                fg: (color: string, text: string) => color === "dim" ? `\x1b[90m${text}\x1b[39m` : text
+                fg: (color: string, text: string) => color === "dim" ? `${DUMMY_DIM}${text}\x1b[39m` : text
               };
               const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
               
@@ -442,6 +589,16 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {
     if (!KNOWN_TOOLS.has(event.toolName) && !unknownTools.has(event.toolName)) {
       unknownTools.add(event.toolName);
+    }
+  });
+
+  // Finalize the native thinking block duration so the next render of the
+  // hidden thinking label can lock in `✻ Thought for Ns`. Until this fires
+  // the label uses the live elapsed time. See getNativeThinkingLabel().
+  pi.on("message_end", async (event) => {
+    const message = (event as any)?.message;
+    if (message && message.role === "assistant") {
+      recordNativeThinkingEnd(message);
     }
   });
 
