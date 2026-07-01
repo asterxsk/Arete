@@ -389,27 +389,28 @@ export default function (pi: ExtensionAPI) {
         !ToolExecutionComponent.prototype.render.__compactui_patched
       ) {
         const originalRender = ToolExecutionComponent.prototype.render;
-        ToolExecutionComponent.prototype.render = function () {
+        ToolExecutionComponent.prototype.render = function (width: number) {
           const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
           if (this.toolName && !knownTools.includes(this.toolName)) {
             const dummyTheme = {
               fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
             };
             const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
+            const w = width || 100; // fallback if width not provided
             
             if (!this.expanded) {
               const resultLines: string[] = [];
               
               const callComp = compactCall(this.toolName, argsStr, dummyTheme);
-              resultLines.push(...callComp.render(100));
+              resultLines.push(...callComp.render(w));
               
               if (this.result) {
                 if (this.result.isError) {
-                  resultLines.push(...compactFailed(dummyTheme).render(100));
+                  resultLines.push(...compactFailed(dummyTheme).render(w));
                 } else {
                   const fullText = this.result.content?.[0]?.text || "";
                   const lineCount = fullText ? fullText.split("\n").length : 0;
-                  resultLines.push(...compactSummary(dummyTheme, `${this.toolName} output`, lineCount, "line").render(100));
+                  resultLines.push(...compactSummary(dummyTheme, `${this.toolName} output`, lineCount, "line").render(w));
                 }
               }
               
@@ -424,17 +425,17 @@ export default function (pi: ExtensionAPI) {
                   // Show expanded error with │ prefix
                   const errText = this.result.content?.[0]?.text || "failed";
                   const errLines = errText.split("\n");
-                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, errLines, durationS, 40).render(100));
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, errLines, durationS, 40).render(w));
                 } else {
                   // expandedBox includes its own header
                   const fullText = this.result.content?.[0]?.text || "";
                   const lines = fullText.split("\n");
-                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(100));
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(w));
                 }
               } else {
                 // Still running - show running status with │ prefix
                 const runningLines = [`${this.toolName} running...`];
-                resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, runningLines, -1, 40).render(100));
+                resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, runningLines, -1, 40).render(w));
               }
               
               return resultLines;
