@@ -54,7 +54,7 @@ class CompactToolBox implements Component {
 			if (footer) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + DIM + footer + RESET, width));
 			// Footer with duration and ctrl+o hint
 			if (duration !== undefined && duration >= 0) {
-				lines.push(truncateToWidth(INDENT + padding + "\u2514 " + DIM + `Took ${(duration / 1000).toFixed(1)}s [ctrl+o to hide]` + RESET, width));
+				lines.push(truncateToWidth(INDENT + padding + "\u2514 " + DIM + `Took ${formatDuration(duration)} [ctrl+o to hide]` + RESET, width));
 			} else {
 				lines.push(truncateToWidth(INDENT + padding + "\u2514 " + DIM + "[ctrl+o to hide]" + RESET, width));
 			}

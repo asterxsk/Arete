@@ -35,7 +35,7 @@ import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tool
 import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
-import { initToolStatusDot, statusDot } from "./tool-status-dot.js";
+import { initToolStatusDot } from "./tool-status-dot.js";
 
 // ── State ──────────────────────────────────────────────────────────────
 
@@ -413,14 +413,6 @@ export default function (pi: ExtensionAPI) {
                 }
               }
               
-              // Add status dot to the first line
-              const dot = statusDot(this, !!this.isPartial, !!this.isError);
-              if (resultLines.length > 0) {
-                let firstLine = resultLines[0];
-                if (firstLine.startsWith(" ")) firstLine = firstLine.substring(1);
-                resultLines[0] = " " + dot.trim() + " " + firstLine;
-              }
-              
               return resultLines;
             } else {
               // Expanded view for unknown tools
@@ -429,10 +421,10 @@ export default function (pi: ExtensionAPI) {
               
               if (this.result) {
                 if (this.result.isError) {
-                  // Show header + error
-                  const callComp = compactCall(this.toolName, argsStr, dummyTheme);
-                  resultLines.push(...callComp.render(100));
-                  resultLines.push(...compactFailed(dummyTheme).render(100));
+                  // Show expanded error with │ prefix
+                  const errText = this.result.content?.[0]?.text || "failed";
+                  const errLines = errText.split("\n");
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, errLines, durationS, 40).render(100));
                 } else {
                   // expandedBox includes its own header
                   const fullText = this.result.content?.[0]?.text || "";
@@ -440,10 +432,9 @@ export default function (pi: ExtensionAPI) {
                   resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(100));
                 }
               } else {
-                // Still running - show header + running status
-                const callComp = compactCall(this.toolName, argsStr, dummyTheme);
-                resultLines.push(...callComp.render(100));
-                resultLines.push(...compactSummary(dummyTheme, `${this.toolName} running`, 0, "").render(100));
+                // Still running - show running status with │ prefix
+                const runningLines = [`${this.toolName} running...`];
+                resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, runningLines, -1, 40).render(100));
               }
               
               return resultLines;

@@ -48,6 +48,10 @@ class CustomBlock {
 export function patchTool(tool: any): void {
   const EXCLUDED_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "grep", "find"]);
   if (EXCLUDED_TOOLS.has(tool.name)) return;
+  
+  // Skip tools that already have custom rendering from their own extensions
+  // (e.g., subagent with CompactToolBox, powershell with its own renderer)
+  if (tool.renderShell === "self" && tool.renderResult && !tool.__compactui_patched) return;
 
   // ── Ask Question ───────────────────────────────────────────────────────
   if (tool.name === "ask_question" || tool.name === "ask_questions" || tool.name === "questions" || tool.name === "question") {
