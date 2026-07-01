@@ -6,9 +6,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { compactToolCall, expandedToolResult, extractResultLines, getDuration, withDurationCapture } from "./render-helpers.js";
 import { SkillStore } from "../store/skill-store.js";
 import { SKILL_TOOL_DESCRIPTION } from "../constants.js";
+import { withDurationCapture } from "./render-helpers.js";
 
 function normalizeTextList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -280,20 +280,5 @@ export function registerSkillTool(pi: ExtensionAPI, store: SkillStore): void {
         details: result,
       };
     }),
-    renderCall(args, theme) {
-      const action = args.action ?? "?";
-      const name = args.name ?? args.skill_id ?? "";
-      const display = `${action} ${name}`.slice(0, 50);
-      return compactToolCall("skill_manage", display, theme);
-    },
-    renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return { render: () => [""], invalidate: () => {} };
-      const lines = extractResultLines(result);
-      const durationS = getDuration(result);
-      const action = context?.args?.action ?? "?";
-      const name = context?.args?.name ?? context?.args?.skill_id ?? "";
-      const argsLine = `${action} ${name}`.slice(0, 50);
-      return expandedToolResult(theme, "skill_manage", argsLine, lines, durationS);
-    },
   });
 }

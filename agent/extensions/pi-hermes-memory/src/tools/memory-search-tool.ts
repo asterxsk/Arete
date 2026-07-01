@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { compactToolCall, expandedToolResult, formatMemorySearchArgs, extractResultLines, getDuration, withDurationCapture } from "./render-helpers.js";
 import { DatabaseManager } from '../store/db.js';
 import { searchMemories, getMemoryStats } from '../store/sqlite-memory-store.js';
 import type { MemoryCategory } from '../types.js';
+import { withDurationCapture } from "./render-helpers.js";
 
 interface SearchResult {
   success: boolean;
@@ -78,15 +78,5 @@ Returns matching memory entries with project context and dates.`,
       const finalResult: SearchResult = { success: true, count: results.length, output: output.trim() };
       return { content: [{ type: 'text' as const, text: output.trim() }], details: finalResult };
     }),
-    renderCall(args, theme) {
-      return compactToolCall('memory_search', formatMemorySearchArgs(args), theme);
-    },
-    renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return { render: () => [''], invalidate: () => {} };
-      const lines = extractResultLines(result);
-      const durationS = getDuration(result);
-      const argsLine = formatMemorySearchArgs(context?.args);
-      return expandedToolResult(theme, 'memory_search', argsLine, lines, durationS);
-    },
   });
 }

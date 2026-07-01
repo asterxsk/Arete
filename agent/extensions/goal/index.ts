@@ -61,6 +61,8 @@ interface GoalBridge {
 	getHistory(): GoalEntry[];
 	setCurrent(state: GoalState | null): void;
 	addHistory(entry: GoalEntry): void;
+	/** Get goal display text for spinner integration */
+	getDisplayText(): string | null;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -89,6 +91,12 @@ function installBridge(): GoalBridge {
 		addHistory: (entry) => {
 			goalHistory.push(entry);
 			if (goalHistory.length > 50) goalHistory.shift(); // cap at 50
+		},
+		getDisplayText: () => {
+			if (!goal) return null;
+			const text = truncate(goal.text, 80);
+			// Capitalize first letter
+			return text.charAt(0).toUpperCase() + text.slice(1);
 		},
 	};
 	(globalThis as any)[BRIDGE_KEY] = bridge;
@@ -127,9 +135,9 @@ function buildProgressBar(turns: number, max: number, segments = 10): string {
 function getWidgetComponent(): (tui: any, theme: any) => { render: () => string[]; invalidate: () => void } {
 	return (_tui: any, theme: any) => ({
 		render: () => {
-			if (!goal) return [];
-			const prefix = theme.fg("accent", "\u273b Goal ");
-			return [`${prefix}${truncate(goal.text, 80)}`];
+			// Goal text is now shown inline with the spinner
+			// Return empty array to hide the separate widget
+			return [];
 		},
 		invalidate: () => {},
 	});
@@ -280,6 +288,21 @@ export default function (pi: ExtensionAPI) {
 		}
 		// Persist config (maxTurns + maxDurationMs)
 		(globalThis as any)[BRIDGE_KEY + "_config"] = { maxTurns, maxDurationMs };
+	});
+
+	// Register escape key to cancel the current goal
+	pi.registerShortcut("escape", {
+		description: "Cancel the active goal",
+		handler: async (_ctx) => {
+			if (!goal) return;
+			const clearedText = goal.text;
+			const turnsUsed = goal.turns;
+			readBridge()?.addHistory({ text: clearedText, completedAt: Date.now(), outcome: "cleared", turnsUsed });
+			goal = null;
+			clearWidget(_ctx);
+			delete (globalThis as any)[BRIDGE_KEY + "_state"];
+			if (_ctx.hasUI) _ctx.ui.notify(`Goal cancelled: ${truncate(clearedText, 60)} (${turnsUsed} turns)`, "info");
+		},
 	});
 
 	pi.registerCommand("goal", {
@@ -570,3 +593,4 @@ function buildContinuationMessage(g: GoalState, isResume = false): string {
 
 	return lines.join("\n");
 }
+

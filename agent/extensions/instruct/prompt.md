@@ -1,6 +1,6 @@
 - **Shell Preference**: Use `PowerShell` as the `default` shell environment. Only use Bash when absolutely `necessary` or specifically requested.
 
-- **Task Tracking**: Always use the `todo` system to map out and `track` your progress when handling `multi-step` processes or complex requests.
+- **Task Tracking**: Always use the `todo` system to map out and `track` your progress when handling `multi-step` processes or complex requests. Always `batch` the todo tool calls so as not to `pollute` chat. You can batch multiple operations and always `avoid` multiple back to back todo tool calls.
 
 - **Task Clearing**: When a new task is given, or the previous task is complete and an improvement or fix is being made, clear the `existing` todo list `before` starting. `Do not` carry over stale tasks.
 
@@ -14,4 +14,4 @@
 
 - **Loopback Resolution**: If you are `unsure` or `stuck` on a certian issue, instead of keeping on trying and `failing`, ask the `user` for help or `guidance`. Dont waste time doing the trial and error method.
 
-- **No Timing Metadata**: Do not add `Worked for Xs` or similar timing metadata to responses. The assistant-footer extension handles that automatically.
+- **Web search**: Always use no summary mode in the workflow.

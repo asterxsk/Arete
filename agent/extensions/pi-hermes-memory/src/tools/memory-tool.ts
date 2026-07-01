@@ -7,7 +7,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { compactToolCall, expandedToolResult, formatMemoryArgs, extractResultLines, getDuration, withDurationCapture } from "./render-helpers.js";
 import { MemoryStore } from "../store/memory-store.js";
 import { DatabaseManager } from "../store/db.js";
 import {
@@ -19,6 +18,7 @@ import {
 } from "../store/sqlite-memory-store.js";
 import { MEMORY_TOOL_DESCRIPTION } from "../constants.js";
 import type { MemoryCategory, MemoryResult } from "../types.js";
+import { withDurationCapture } from "./render-helpers.js";
 
 function appendSyncWarning(result: MemoryResult, warning: string): MemoryResult {
   const warnings = [...(((result as any).warnings ?? []) as string[]), warning];
@@ -361,15 +361,5 @@ export function registerMemoryTool(
         details: result,
       };
     }),
-    renderCall(args, theme) {
-      return compactToolCall("memory", formatMemoryArgs(args), theme);
-    },
-    renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return { render: () => [""], invalidate: () => {} };
-      const lines = extractResultLines(result);
-      const durationS = getDuration(result);
-      const argsLine = formatMemoryArgs(context?.args);
-      return expandedToolResult(theme, "memory", argsLine, lines, durationS);
-    },
   });
 }

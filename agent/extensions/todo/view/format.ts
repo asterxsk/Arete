@@ -109,8 +109,16 @@ export function renderTodoCall(
 	const glyph = ACTION_GLYPH[args.action] ?? args.action;
 	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", glyph);
 
-	if (args.action === "create" && args.subject) {
+	if (args.action === "create" && args.subjects?.length) {
+		text += ` ${theme.fg("dim", `+${args.subjects.length} tasks`)}`;
+	} else if (args.action === "create" && args.subject) {
 		text += ` ${theme.fg("dim", args.subject)}`;
+	} else if (
+		(args.action === "update" || args.action === "get" || args.action === "delete") &&
+		args.ids?.length
+	) {
+		const idsStr = args.ids.map((id) => `#${id}`).join(",");
+		text += ` ${theme.fg("accent", idsStr)}`;
 	} else if (
 		(args.action === "update" || args.action === "get" || args.action === "delete") &&
 		args.id !== undefined
@@ -139,10 +147,18 @@ export function renderTodoResult(result: { details?: unknown }, theme: Theme): T
 				status = details.tasks[details.tasks.length - 1]?.status;
 				break;
 			case "update":
-				status = params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
+				if (params.ids?.length) {
+					status = params.status ?? details.tasks[details.tasks.length - 1]?.status;
+				} else {
+					status = params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
+				}
 				break;
 			case "delete":
-				status = details.tasks.find((t) => t.id === params.id)?.status;
+				if (params.ids?.length) {
+					status = "deleted";
+				} else {
+					status = details.tasks.find((t) => t.id === params.id)?.status;
+				}
 				break;
 			case "list":
 			case "get":

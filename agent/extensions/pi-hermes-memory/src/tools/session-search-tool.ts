@@ -2,13 +2,13 @@ import * as path from 'node:path';
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { compactToolCall, expandedToolResult, formatSessionSearchArgs, extractResultLines, getDuration, withDurationCapture } from "./render-helpers.js";
 import { DatabaseManager } from '../store/db.js';
 import { searchSessions, getIndexedMessageCount } from '../store/session-search.js';
 import { searchSessionAnchors } from '../store/session-anchor-search.js';
 import type { SessionAnchorRange, SessionAnchorSearchResult } from '../store/session-anchor-search.js';
 import type { SessionSearchConfig } from '../types.js';
 import { AGENT_ROOT } from '../paths.js';
+import { withDurationCapture } from "./render-helpers.js";
 
 interface SearchResult {
   success: boolean;
@@ -95,16 +95,6 @@ exclude:
       };
       return { content: [{ type: 'text' as const, text: output }], details: result };
     }),
-    renderCall(args, theme) {
-      return compactToolCall('session_search', formatSessionSearchArgs(args), theme);
-    },
-    renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return { render: () => [''], invalidate: () => {} };
-      const lines = extractResultLines(result);
-      const durationS = getDuration(result);
-      const argsLine = formatSessionSearchArgs(context?.args);
-      return expandedToolResult(theme, 'session_search', argsLine, lines, durationS);
-    },
   });
 }
 
@@ -193,15 +183,5 @@ Returns conversation snippets with session dates and project context.`,
       const finalResult: SearchResult = { success: true, count: results.length, output: output.trim() };
       return { content: [{ type: 'text' as const, text: output.trim() }], details: finalResult };
     }),
-    renderCall(args, theme) {
-      return compactToolCall('session_search', formatSessionSearchArgs(args), theme);
-    },
-    renderResult(result, { expanded }, theme, context) {
-      if (!expanded) return { render: () => [''], invalidate: () => {} };
-      const lines = extractResultLines(result);
-      const durationS = getDuration(result);
-      const argsLine = formatSessionSearchArgs(context?.args);
-      return expandedToolResult(theme, 'session_search', argsLine, lines, durationS);
-    },
   });
 }
