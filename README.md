@@ -61,7 +61,7 @@ Add the following to your Pi `settings.json` (located at `~/.pi/settings.json`):
     "provider": { "timeoutMs": 600000 }
   },
   "packages": [
-    "npm:pi-web-access",
+    "npm:pi-web-access"
   ],
   "hideThinkingBlock": false,
   "quietStartup": true,
