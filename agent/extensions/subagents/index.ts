@@ -55,7 +55,7 @@ class CompactToolBox implements Component {
 			if (footer) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + DIM + footer + RESET, width));
 			// Show finished status for completed state
 			if (state === "done") {
-				lines.push(truncateToWidth(INDENT + CONTENT_INDENT + GREEN + "\u2714 Finished." + RESET, width));
+				lines.push(truncateToWidth(INDENT + CONTENT_INDENT + "\x1b[97m Finished." + RESET, width));
 			}
 			// Footer with duration and ctrl+o hint
 			if (duration !== undefined && duration >= 0) {
