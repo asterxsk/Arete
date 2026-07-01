@@ -214,9 +214,8 @@ export default function (pi: ExtensionAPI) {
               const hint = " [ctrl+o to expand]";
               const prefix = "  \u2514 ";
               const lineText = prefix + skillName + hint;
-              const dimColor = "\x1b[38;2;140;140;140m";
               const resetColor = "\x1b[39m";
-              const subtitleText = dimColor + lineText + resetColor;
+              const subtitleText = DIM_GREY + lineText + resetColor;
               // Create a simple line component for the subtitle
               const subtitleComponent = {
                 render(width: number) { return [subtitleText]; },
@@ -305,7 +304,7 @@ export default function (pi: ExtensionAPI) {
                    }
                    this.contentContainer.addChild(line(""));
                    this.contentContainer.addChild(
-                     new Text(`\x1b[38;2;140;140;140m${footerText}\x1b[0m`, 1, 0)
+                     new Text(`${DIM_GREY}${footerText}\x1b[0m`, 1, 0)
                    );
                 } else {
                    // Clean up duplicates even if it's not at the end
@@ -349,10 +348,9 @@ export default function (pi: ExtensionAPI) {
                 // shows `Thought for Ns` — live during streaming, locked in
                 // after message_end. Color matches the `✻ Worked for Xs`
                 // footer (`assistant-footer.ts`) so both labels look like
-                // siblings: DIM_GREY (`\x1b[38;2;140;140;140m`) with reset.
                 const label = getNativeThinkingLabel(message, "Thought...");
                 this.contentContainer.addChild(
-                  new Text(`\x1b[38;2;140;140;140m✻ ${label}\x1b[0m`, 1, 0)
+                  new Text(`${DIM_GREY}✻ ${label}\x1b[0m`, 1, 0)
                 );
               } else {
                 this.contentContainer.addChild(

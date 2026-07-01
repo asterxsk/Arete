@@ -30,7 +30,8 @@ function orange(theme: any, text: string): string {
 
 function compactCall(toolName: string, argsStr: string, theme: any): Component {
 	let display = argsStr.split("\n")[0] ?? argsStr;
-	if (display.length > 50) display = display.slice(0, 47) + "...";
+	const maxDisplay = 40;
+	if (display.length > maxDisplay) display = display.slice(0, maxDisplay - 3) + "...";
 	else if (display.length < argsStr.length) display += "...";
 	return compactLine(INDENT + orange(theme, toolName) + " [" + display + "]" + DIM_GREY + HINT + "\x1b[39m");
 }
