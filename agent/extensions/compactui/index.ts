@@ -427,19 +427,22 @@ export default function (pi: ExtensionAPI) {
               const resultLines: string[] = [];
               const durationS = (this.result?.details?._durationS as number) ?? -1;
               
-              const callComp = compactCall(this.toolName, argsStr, dummyTheme);
-              resultLines.push(...callComp.render(100));
-              
               if (this.result) {
                 if (this.result.isError) {
+                  // Show header + error
+                  const callComp = compactCall(this.toolName, argsStr, dummyTheme);
+                  resultLines.push(...callComp.render(100));
                   resultLines.push(...compactFailed(dummyTheme).render(100));
                 } else {
+                  // expandedBox includes its own header
                   const fullText = this.result.content?.[0]?.text || "";
                   const lines = fullText.split("\n");
                   resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(100));
                 }
               } else {
-                // Still running - show spinner
+                // Still running - show header + running status
+                const callComp = compactCall(this.toolName, argsStr, dummyTheme);
+                resultLines.push(...callComp.render(100));
                 resultLines.push(...compactSummary(dummyTheme, `${this.toolName} running`, 0, "").render(100));
               }
               
