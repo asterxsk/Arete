@@ -45,7 +45,7 @@ function scheduleBlinkTimer(): void {
   }, BLINK_MS);
 }
 
-function statusDot(ctx: any, isPartial: boolean, isError: boolean): string {
+export function statusDot(ctx: any, isPartial: boolean, isError: boolean): string {
   if (!isPartial && !isError) return `${SUCCESS}\u25cf${RESET} `;
   if (!isPartial && isError) return `${ERROR}\u25cf${RESET} `;
 

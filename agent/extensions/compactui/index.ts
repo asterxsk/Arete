@@ -35,7 +35,7 @@ import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tool
 import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
-import { initToolStatusDot } from "./tool-status-dot.js";
+import { initToolStatusDot, statusDot } from "./tool-status-dot.js";
 
 // ── State ──────────────────────────────────────────────────────────────
 
@@ -412,6 +412,15 @@ export default function (pi: ExtensionAPI) {
                   resultLines.push(...compactSummary(dummyTheme, `${this.toolName} output`, lineCount, "line").render(100));
                 }
               }
+              
+              // Add status dot to the first line
+              const dot = statusDot(this, !!this.isPartial, !!this.isError);
+              if (resultLines.length > 0) {
+                let firstLine = resultLines[0];
+                if (firstLine.startsWith(" ")) firstLine = firstLine.substring(1);
+                resultLines[0] = " " + dot.trim() + " " + firstLine;
+              }
+              
               return resultLines;
             }
           }
