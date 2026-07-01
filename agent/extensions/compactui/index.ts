@@ -33,7 +33,6 @@ import {
 } from "./rendering.js";
 import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tools.js";
 import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
-import { registerTools } from "./register-tools.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
 import { initToolStatusDot } from "./tool-status-dot.js";
