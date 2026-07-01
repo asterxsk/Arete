@@ -42,6 +42,7 @@ class CompactToolBox implements Component {
 		const star = "";
 		const DIM = "\x1b[38;2;140;140;140m";
 		const RESET = "\x1b[39m";
+		const GREEN = "\x1b[38;2;120;220;120m";
 		const INDENT = " ";
 		let header = `\x1b[38;2;255;165;0m${toolName}\x1b[0m`;
 		if (suffix) header += ` ${suffix}`;
@@ -52,6 +53,10 @@ class CompactToolBox implements Component {
 			if (argsLine) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + argsLine, width));
 			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + pl, width));
 			if (footer) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + DIM + footer + RESET, width));
+			// Show finished status for completed state
+			if (state === "done") {
+				lines.push(truncateToWidth(INDENT + CONTENT_INDENT + GREEN + "\u2714 Finished." + RESET, width));
+			}
 			// Footer with duration and ctrl+o hint
 			if (duration !== undefined && duration >= 0) {
 				lines.push(truncateToWidth(INDENT + padding + "\u2514 " + DIM + `Took ${formatDuration(duration)} [ctrl+o to hide]` + RESET, width));
@@ -1054,7 +1059,7 @@ export default function (pi: ExtensionAPI) {
 			const agentName = r?.agent || "subagent";
 			let statusText = "working";
 			if (r?.progress?.currentTool) {
-				statusText = "tools";
+				statusText = r.progress.currentTool; // Show actual tool name like "bash", "edit"
 			} else if (r?.progress?.lastMessage) {
 				statusText = "thinking";
 			}
