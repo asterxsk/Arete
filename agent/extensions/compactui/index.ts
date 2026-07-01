@@ -703,7 +703,7 @@ export default function (pi: ExtensionAPI) {
 
       const numberedLines = lines.map((line: string, i: number) => {
         const num = String(offset + i).padStart(4, " ");
-        return `${num}  ${line}`;
+        return `\x1b[97m${num}\x1b[39m  ${line}`;
       });
 
       return expandedBox(theme, "read", label, numberedLines, durationS, 40);
@@ -746,7 +746,7 @@ export default function (pi: ExtensionAPI) {
 
       const numberedLines = lines.map((line: string, i: number) => {
         const num = String(i + 1).padStart(4, " ");
-        return `${num}  ${line}`;
+        return `\x1b[97m${num}\x1b[39m  ${line}`;
       });
 
       return expandedBox(theme, "write", filePath, numberedLines, durationS, 40);
