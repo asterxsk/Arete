@@ -15,9 +15,17 @@ export function initPromptUi(): void {
   if (userMsgProto[PROMPT_PATCH]) return;
 
   const originalRender = userMsgProto.render;
+  // Find and disable the Box child's bg and padding
+  function getBoxChild(instance: any): any {
+    for (const child of instance.children || []) {
+      if (child.constructor?.name === "Box") return child;
+    }
+    return null;
+  }
+
   userMsgProto.render = function (width: number) {
     const targetWidth = Math.max(1, width - 3);
-    const box = this.contentBox;
+    const box = getBoxChild(this);
     if (box) {
       box.bgFn = null;
       box.paddingY = 0;
@@ -32,21 +40,21 @@ export function initPromptUi(): void {
     const lines = originalRender.call(this, Math.max(1, targetWidth - prefixW));
     if (!Array.isArray(lines) || lines.length === 0) return lines;
 
-    while (lines.length > 0 && lines[0] === "") {
-      lines.shift();
+    // Remove all empty padding lines
+    const contentLines = lines.filter(l => l !== "");
+    if (contentLines.length === 0) {
+      const pad = " ".repeat(Math.max(0, targetWidth));
+      return [truncateToWidth(bg + prefix + pad + resetBg, width)];
     }
 
+    // Render all content lines with bg; first gets prefix, rest get indent
     const indent = " ".repeat(prefixW);
-    for (let i = 0; i < lines.length; i++) {
+    return contentLines.map((lineText, i) => {
       const pfx = i === 0 ? prefix : indent;
-      const lineText = lines[i];
       const visLen = prefixW + visibleWidth(lineText);
       const padding = " ".repeat(Math.max(0, targetWidth - visLen));
-      lines[i] = truncateToWidth(bg + pfx + lineText + padding + resetBg, width);
-    }
-
-    // Removed explicit unshift since syncMessages already adds a spacer between messages
-    return lines;
+      return truncateToWidth(bg + pfx + lineText + padding + resetBg, width);
+    });
   };
   userMsgProto[PROMPT_PATCH] = true;
   (userMsgProto.render as any).__compactui_spacer_patched = true;

@@ -16,6 +16,7 @@ Provides a persistent todo list with overlay widget, slash command, and LLM-call
 - State replayed from branch on `session_start`, `session_compact`, `session_tree`
 - `replaceState()` and `replayFromBranch()` from state modules
 - Handles stale ctx errors during auto-compaction gracefully
+- Batch items support `as` labels (on create) and `refs` (on subsequent items) for creating and referencing tasks in one call
 
 ## Work Guidance
 - Todo state is session-branch-based and replayed on session events

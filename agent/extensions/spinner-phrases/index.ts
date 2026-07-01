@@ -122,7 +122,11 @@ function advanceFrame(): void {
 function buildFullText(phrase: string): string {
 	const elapsed = Math.floor((Date.now() - startTime) / 1000);
 	const timeStr = formatElapsed(elapsed);
-	const plain = `${getCurrentFrame()} ${phrase} (${timeStr})`;
+	// Read goal text from the goal extension's bridge
+	const goalBridge = (globalThis as any)["__pi_goal_state"];
+	const goalText = goalBridge?.getDisplayText?.() || "";
+	const goalPart = goalText ? ` - 𖤍 ${goalText}` : "";
+	const plain = `${getCurrentFrame()} ${phrase} (${timeStr})${goalPart}`;
 	return `${ORANGE}${plain}${RESET}`;
 }
 
