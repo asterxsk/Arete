@@ -43,17 +43,24 @@ function formatGetLines(task: Task, state: TaskState): string {
 export function formatContent(op: Op, state: TaskState): string {
 	switch (op.kind) {
 		case "create": {
-			const t = state.tasks.find((x) => x.id === op.taskId);
-			// Defensive — `op.taskId` always resolves on success path.
-			if (!t) return `Created #${op.taskId}`;
-			return `Created #${t.id}: ${t.subject} (pending)`;
+			const names = op.ids
+				.map((id) => {
+					const t = state.tasks.find((x) => x.id === id);
+					return t ? `#${t.id}: ${t.subject} (pending)` : `#${id}`;
+				})
+				.join(", ");
+			return `Created ${names}`;
 		}
 		case "update": {
-			const transition = op.fromStatus !== op.toStatus ? ` (${op.fromStatus} → ${op.toStatus})` : "";
-			return `Updated #${op.id}${transition}`;
+			return op.results
+				.map((r) => {
+					const transition = r.fromStatus !== r.toStatus ? ` (${r.fromStatus} → ${r.toStatus})` : "";
+					return `Updated #${r.id}${transition}`;
+				})
+				.join("\n");
 		}
 		case "delete":
-			return `Deleted #${op.id}: ${op.subject}`;
+			return op.items.map((d) => `Deleted #${d.id}: ${d.subject}`).join("\n");
 		case "clear":
 			return `Cleared ${op.count} tasks`;
 		case "list": {
@@ -63,7 +70,7 @@ export function formatContent(op: Op, state: TaskState): string {
 			return view.length === 0 ? "No tasks" : view.map(formatListLine).join("\n");
 		}
 		case "get":
-			return formatGetLines(op.task, state);
+			return op.tasks.map((t) => formatGetLines(t, state)).join("\n");
 		case "batch": {
 			if (op.results.length === 0) return "Batch: 0 operations";
 			const lines = [`Batch: ${op.results.length} operation${op.results.length !== 1 ? "s" : ""}:`];

@@ -13,11 +13,11 @@ import { detectCycle } from "./task-graph.js";
  * `op.kind === "error"` without a side-channel boolean.
  */
 export type Op =
-	| { kind: "create"; taskId: number }
-	| { kind: "update"; id: number; fromStatus: TaskStatus; toStatus: TaskStatus }
-	| { kind: "delete"; id: number; subject: string }
+	| { kind: "create"; ids: number[] }
+	| { kind: "update"; results: Array<{ id: number; fromStatus: TaskStatus; toStatus: TaskStatus }> }
+	| { kind: "delete"; items: Array<{ id: number; subject: string }> }
 	| { kind: "list"; statusFilter?: TaskStatus; includeDeleted: boolean }
-	| { kind: "get"; task: Task }
+	| { kind: "get"; tasks: Task[] }
 	| { kind: "clear"; count: number }
 	| { kind: "batch"; results: Array<{ index: number; op: Exclude<Op, { kind: "batch" }> }> }
 	| { kind: "error"; message: string };
@@ -45,6 +45,25 @@ function errorResult(state: TaskState, message: string): ApplyResult {
 export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
 	switch (action) {
 		case "create": {
+			// Plural path: subjects[]
+			if (params.subjects?.length) {
+				const subjects = params.subjects.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+				if (subjects.length === 0) return errorResult(state, "subjects[] requires at least one non-empty subject");
+
+				const createdIds: number[] = [];
+				let cursor = state;
+				for (const subject of subjects) {
+					const subResult = applyTaskMutation(cursor, "create", {
+						...params,
+						subject,
+						subjects: undefined,
+					} as TaskMutationParams);
+					if (subResult.op.kind === "error") return subResult;
+					cursor = subResult.state;
+					if (subResult.op.kind === "create") createdIds.push(...subResult.op.ids);
+				}
+				return { state: cursor, op: { kind: "create", ids: createdIds } };
+			}
 			if (!params.subject?.trim()) {
 				return errorResult(state, "subject required for create");
 			}
@@ -69,11 +88,27 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			const newTasks = [...state.tasks, newTask];
 			return {
 				state: { tasks: newTasks, nextId: state.nextId + 1 },
-				op: { kind: "create", taskId: newTask.id },
+				op: { kind: "create", ids: [newTask.id] },
 			};
 		}
 
 		case "update": {
+			// Plural path: ids[]
+			if (params.ids?.length) {
+				const results: Array<{ id: number; fromStatus: TaskStatus; toStatus: TaskStatus }> = [];
+				let cursor = state;
+				for (const id of params.ids) {
+					const subResult = applyTaskMutation(cursor, "update", {
+						...params,
+						id,
+						ids: undefined,
+					} as TaskMutationParams);
+					if (subResult.op.kind === "error") return subResult;
+					cursor = subResult.state;
+					if (subResult.op.kind === "update") results.push(subResult.op.results[0]);
+				}
+				return { state: cursor, op: { kind: "update", results } };
+			}
 			if (params.id === undefined) return errorResult(state, "id required for update");
 			const idx = state.tasks.findIndex((t) => t.id === params.id);
 			if (idx === -1) return errorResult(state, `#${params.id} not found`);
@@ -140,7 +175,7 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			newTasks[idx] = updated;
 			return {
 				state: { tasks: newTasks, nextId: state.nextId },
-				op: { kind: "update", id: updated.id, fromStatus: current.status, toStatus: newStatus },
+				op: { kind: "update", results: [{ id: updated.id, fromStatus: current.status, toStatus: newStatus }] },
 			};
 		}
 
@@ -156,13 +191,45 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 		}
 
 		case "get": {
+			// Plural path: ids[]
+			if (params.ids?.length) {
+				const tasks: Task[] = [];
+				let cursor = state;
+				for (const id of params.ids) {
+					const subResult = applyTaskMutation(cursor, "get", {
+						...params,
+						id,
+						ids: undefined,
+					} as TaskMutationParams);
+					if (subResult.op.kind === "error") return subResult;
+					cursor = subResult.state;
+					if (subResult.op.kind === "get") tasks.push(subResult.op.tasks[0]);
+				}
+				return { state: cursor, op: { kind: "get", tasks } };
+			}
 			if (params.id === undefined) return errorResult(state, "id required for get");
 			const task = state.tasks.find((t) => t.id === params.id);
 			if (!task) return errorResult(state, `#${params.id} not found`);
-			return { state, op: { kind: "get", task } };
+			return { state, op: { kind: "get", tasks: [task] } };
 		}
 
 		case "delete": {
+			// Plural path: ids[]
+			if (params.ids?.length) {
+				const items: Array<{ id: number; subject: string }> = [];
+				let cursor = state;
+				for (const id of params.ids) {
+					const subResult = applyTaskMutation(cursor, "delete", {
+						...params,
+						id,
+						ids: undefined,
+					} as TaskMutationParams);
+					if (subResult.op.kind === "error") return subResult;
+					cursor = subResult.state;
+					if (subResult.op.kind === "delete") items.push(subResult.op.items[0]);
+				}
+				return { state: cursor, op: { kind: "delete", items } };
+			}
 			if (params.id === undefined) return errorResult(state, "id required for delete");
 			const idx = state.tasks.findIndex((t) => t.id === params.id);
 			if (idx === -1) return errorResult(state, `#${params.id} not found`);
@@ -173,7 +240,7 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			newTasks[idx] = updated;
 			return {
 				state: { tasks: newTasks, nextId: state.nextId },
-				op: { kind: "delete", id: updated.id, subject: updated.subject },
+				op: { kind: "delete", items: [{ id: updated.id, subject: updated.subject }] },
 			};
 		}
 
@@ -192,21 +259,61 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			type BatchOp = Exclude<Op, { kind: "batch" }>;
 			const results: Array<{ index: number; op: BatchOp }> = [];
 			let currentState = state;
+			const refRegistry = new Map<string, number>();
 
 			for (let i = 0; i < params.items.length; i++) {
 				const item = params.items[i];
-				const { action: itemAction, ...itemParams } = item;
-				// "list" and "get" are read-only — block them in batch to keep
-				// batch semantics simple (write-only side-effecting ops).
+				const { action: itemAction, as: itemAs, refs: itemRefs, ...itemParams } = item;
+
+				// Validate "as" labels
+				if (itemAs?.length) {
+					if (itemAction !== "create") {
+						return errorResult(state, `batch item ${i}: "as" only valid for create actions`);
+					}
+					const taskCount = item.subjects?.length ?? 1;
+					if (itemAs.length !== taskCount) {
+						return errorResult(state, `batch item ${i}: "as" (${itemAs.length}) must match task count (${taskCount})`);
+					}
+					for (const label of itemAs) {
+						if (refRegistry.has(label)) {
+							return errorResult(state, `batch item ${i}: duplicate as label "${label}"`);
+						}
+					}
+				}
+
+				// Resolve "refs" → ids
+				if (itemRefs?.length) {
+					const resolvedIds: number[] = [];
+					for (const ref of itemRefs) {
+						const id = refRegistry.get(ref);
+						if (id === undefined) {
+							return errorResult(state, `batch item ${i}: ref "${ref}" not defined in earlier items`);
+						}
+						resolvedIds.push(id);
+					}
+					itemParams.ids = resolvedIds;
+				}
+
+				// Block list/get in batch (read-only ops)
 				if ((itemAction as string) === "list" || (itemAction as string) === "get") {
 					return errorResult(state, `batch item ${i}: action "${itemAction}" not allowed in batch (use list/get separately)`);
 				}
+
 				const sub = applyTaskMutation(currentState, itemAction, itemParams as TaskMutationParams);
 				if (sub.op.kind === "error") {
-					// Abort on first error; return original state (no partial commit)
 					return errorResult(state, `batch item ${i} (${itemAction}): ${(sub.op as { kind: "error"; message: string }).message}`);
 				}
 				currentState = sub.state;
+
+				// Register "as" labels after successful create
+				if (itemAs?.length && sub.op.kind === "create") {
+					sub.op.ids.forEach((id, idx) => {
+						if (idx < itemAs.length) {
+							refRegistry.set(itemAs[idx], id);
+						}
+					});
+				}
+
 				results.push({ index: i, op: sub.op as BatchOp });
 			}
 

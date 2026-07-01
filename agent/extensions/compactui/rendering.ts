@@ -74,7 +74,9 @@ export function formatDur(s: number): string {
 
 export function wrapWithPrefix(rl: string, width: number): string[] {
   const visible = rl.replace(/\x1b\[[0-9;]*m/g, "");
-  const match = visible.match(/^(\s*(?:\u2502|\u2514|\[)?\s*(?:\s*\d+\s*(?:\u2502|\+|\-)?\s*)?)/);
+  // Match prefix: leading spaces + │ or └ + trailing spaces
+  // This handles formats like " │ " or "└ " or just "│ "
+  const match = visible.match(/^(\s*[\u2502\u2514]\s*)/);
   if (!match || match[1].length === 0) return wrapTextWithAnsi(rl, width);
 
   const prefixLen = match[1].length;
@@ -98,12 +100,14 @@ export function wrapWithPrefix(rl: string, width: number): string[] {
     i++;
   }
 
-  const contentWidth = Math.max(10, width - prefixLen);
+  // 2-char right margin
+  const contentWidth = Math.max(10, width - prefixLen - 2);
   const wrappedContent = wrapTextWithAnsi(contentStr, contentWidth);
   if (wrappedContent.length === 0) return [ansiPrefix];
 
   const result = [ansiPrefix + wrappedContent[0]];
-  const subsequentPrefixStr = match[1].replace(/[^\s\u2502]/g, " ");
+  // Subsequent lines preserve the exact same prefix
+  const subsequentPrefixStr = match[1];
   for (let j = 1; j < wrappedContent.length; j++) {
     result.push(subsequentPrefixStr + wrappedContent[j]);
   }
@@ -169,16 +173,16 @@ export function expandedBox(theme: any, headerName: string, argsLine: string, li
       const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
       const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
       if (wrappedArgs.length === 0) {
-        result.push(headerPrefix + "]");
+        result.push(truncateToWidth(headerPrefix + "]", width));
       } else {
         for (let i = 0; i < wrappedArgs.length; i++) {
           if (i === 0) {
             const suffix = wrappedArgs.length === 1 ? "]" : "";
-            result.push(headerPrefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(headerPrefix + wrappedArgs[i] + suffix, width));
           } else {
             const prefix = " ".repeat(headerPrefixWidth);
             const suffix = i === wrappedArgs.length - 1 ? "]" : "";
-            result.push(prefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(prefix + wrappedArgs[i] + suffix, width));
           }
         }
       }
@@ -272,16 +276,16 @@ export function diffExpandedBox(theme: any, headerName: string, argsLine: string
       const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
       const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
       if (wrappedArgs.length === 0) {
-        result.push(headerPrefix + "]");
+        result.push(truncateToWidth(headerPrefix + "]", width));
       } else {
         for (let i = 0; i < wrappedArgs.length; i++) {
           if (i === 0) {
             const suffix = wrappedArgs.length === 1 ? "]" : "";
-            result.push(headerPrefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(headerPrefix + wrappedArgs[i] + suffix, width));
           } else {
             const prefix = " ".repeat(headerPrefixWidth);
             const suffix = i === wrappedArgs.length - 1 ? "]" : "";
-            result.push(prefix + wrappedArgs[i] + suffix);
+            result.push(truncateToWidth(prefix + wrappedArgs[i] + suffix, width));
           }
         }
       }

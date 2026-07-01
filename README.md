@@ -86,6 +86,7 @@ Add the following to your Pi `settings.json` (located at `~/.pi/settings.json`):
 To get the absolute most out of Arete, we recommend installing the following external packages and skills:
 
 **Packages:**
+This is auto installed by the script.
 ```bash
 pi install npm:pi-web-access
 ```

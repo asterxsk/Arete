@@ -40,13 +40,29 @@ class CompactToolBox implements Component {
 		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways, duration } = this.opts;
 		const lines: string[] = [];
 		const star = "";
+		const DIM = "\x1b[38;2;140;140;140m";
+		const RESET = "\x1b[39m";
+		const GREEN = "\x1b[38;2;120;220;120m";
+		const INDENT = " ";
 		let header = `\x1b[38;2;255;165;0m${toolName}\x1b[0m`;
 		if (suffix) header += ` ${suffix}`;
 		lines.push(truncateToWidth(header, width));
 		if (expanded) {
-			if (argsLine) lines.push(truncateToWidth(`    ${argsLine}`, width));
-			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`    ${pl}`, width));
-			if (footer) lines.push(truncateToWidth(`    ${footer}`, width));
+			const padding = " ".repeat(toolName.length + 1);
+			const CONTENT_INDENT = padding + "\u2502 ";
+			if (argsLine) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + argsLine, width));
+			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + pl, width));
+			if (footer) lines.push(truncateToWidth(INDENT + CONTENT_INDENT + DIM + footer + RESET, width));
+			// Show finished status for completed state
+			if (state === "done") {
+				lines.push(truncateToWidth(INDENT + CONTENT_INDENT + "\x1b[97m Finished." + RESET, width));
+			}
+			// Footer with duration and ctrl+o hint
+			if (duration !== undefined && duration >= 0) {
+				lines.push(truncateToWidth(INDENT + padding + "\u2514 " + DIM + `Took ${formatDuration(duration)} [ctrl+o to hide]` + RESET, width));
+			} else {
+				lines.push(truncateToWidth(INDENT + padding + "\u2514 " + DIM + "[ctrl+o to hide]" + RESET, width));
+			}
 		} else {
 			// Single-line compact mode
 			const parts: string[] = [`[${truncateToWidth(argsLine, Math.max(10, width - 26))}]`, "(ctrl+o to expand)"];
@@ -1043,7 +1059,7 @@ export default function (pi: ExtensionAPI) {
 			const agentName = r?.agent || "subagent";
 			let statusText = "working";
 			if (r?.progress?.currentTool) {
-				statusText = "tools";
+				statusText = r.progress.currentTool; // Show actual tool name like "bash", "edit"
 			} else if (r?.progress?.lastMessage) {
 				statusText = "thinking";
 			}

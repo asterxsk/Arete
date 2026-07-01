@@ -1,7 +1,7 @@
 # Statusline Extension
 
 ## Purpose
-Renders a two-line status footer in the TUI showing provider info, model name, context usage bar with color gradient, and file changes count. Also provides an Alt+C shortcut to compact context when usage exceeds 90%.
+Renders a status footer in the TUI showing provider × model on line 1 with context bar, and line 2 with path, input/output token counts, and file changes count. Also provides an Alt+C shortcut to compact context when usage exceeds 90%.
 
 ## Ownership
 - `index.ts` — status line footer rendering and compact shortcut
@@ -18,7 +18,7 @@ Renders a two-line status footer in the TUI showing provider info, model name, c
 ## Work Guidance
 - Color stops are defined in `COLOR_STOPS` array — adjust thresholds for context warning levels
 - `smoothContextColor()` and `buildGradientBar()` are pure helper functions safe to test
-- Footer render returns two aligned lines — keep right-side elements width-aware
+- Footer render returns provider × model on line 1 with context bar, file changes on line 2 — keep right-side elements width-aware
 - Throttle timer at 120ms prevents excessive re-renders during streaming
 
 ## Verification

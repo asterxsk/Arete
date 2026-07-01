@@ -43,6 +43,12 @@ export interface BatchItem {
 	owner?: string;
 	metadata?: Record<string, unknown>;
 	id?: number;
+	subjects?: string[];
+	ids?: number[];
+	/** Labels to assign to created tasks (index-aligned with subjects, create only) */
+	as?: string[];
+	/** Reference labels from earlier batch items instead of numeric ids */
+	refs?: string[];
 }
 
 export interface Task {
@@ -90,6 +96,10 @@ export interface TaskMutationParams {
 	includeDeleted?: boolean;
 	/** Batch mode: list of sub-operations to apply atomically in order. */
 	items?: BatchItem[];
+	/** Batch create: task subjects for multiple creates in one call. */
+	subjects?: string[];
+	/** Batch update/get/delete: task ids for operating on multiple tasks in one call. */
+	ids?: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +126,18 @@ const BatchItemSchema = Type.Object({
 	owner: Type.Optional(Type.String({ description: "Agent/owner assigned" })),
 	metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Arbitrary metadata" })),
 	id: Type.Optional(Type.Number({ description: "Task id (required for update and delete items)" })),
+	subjects: Type.Optional(Type.Array(Type.String(), { description: "Batch create subjects" })),
+	ids: Type.Optional(Type.Array(Type.Number(), { description: "Batch task ids for update/delete" })),
+	as: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Labels to assign to created task ids (index-aligned; create only; e.g. ['$t1', '$t2'])",
+		}),
+	),
+	refs: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Reference labels from earlier batch items instead of numeric ids (e.g. ['$t1'])",
+		}),
+	),
 });
 
 export const TodoParamsSchema = Type.Object({
@@ -158,6 +180,16 @@ export const TodoParamsSchema = Type.Object({
 			description: "Task id (required for update, get, delete)",
 		}),
 	),
+	subjects: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Batch create: task subjects for multiple creates in one call.",
+		}),
+	),
+	ids: Type.Optional(
+		Type.Array(Type.Number(), {
+			description: "Batch update/get/delete: task ids for operating on multiple tasks in one call.",
+		}),
+	),
 	includeDeleted: Type.Optional(
 		Type.Boolean({
 			description: "If true, list action returns deleted (tombstoned) tasks as well. Default: false.",
@@ -166,7 +198,7 @@ export const TodoParamsSchema = Type.Object({
 	items: Type.Optional(
 		Type.Array(BatchItemSchema, {
 			description:
-				"Batch mode only: list of sub-operations (create/update/delete/clear) applied in order. Ids produced by earlier creates in the same batch are NOT usable by later items in that same batch call — reference existing ids only.",
+				"Batch mode only: list of sub-operations (create/update/delete/clear) applied in order. Use 'as' labels on creates and 'refs' on subsequent items to reference newly created tasks by label.",
 		}),
 	),
 });

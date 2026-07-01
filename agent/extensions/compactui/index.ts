@@ -33,7 +33,6 @@ import {
 } from "./rendering.js";
 import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tools.js";
 import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
-import { registerTools } from "./register-tools.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
 import { initToolStatusDot } from "./tool-status-dot.js";
@@ -80,11 +79,6 @@ function getTiming(message: object): ThinkingTiming | undefined {
 }
 
 function recordNativeThinkingStart(message: object): void {
-  // Skip messages that already have a stopReason — they are pre-existing
-  // entries (loaded from session) and we missed the original streaming
-  // window, so we can't provide accurate timing. Let them fall through to
-  // the "Thought..." fallback.
-  if ((message as any).stopReason) return;
   if (!(message as any)[THINKING_TIMING_KEY]) {
     Object.defineProperty(message, THINKING_TIMING_KEY, {
       value: { startMs: Date.now() },
@@ -220,9 +214,8 @@ export default function (pi: ExtensionAPI) {
               const hint = " [ctrl+o to expand]";
               const prefix = "  \u2514 ";
               const lineText = prefix + skillName + hint;
-              const dimColor = "\x1b[38;2;140;140;140m";
               const resetColor = "\x1b[39m";
-              const subtitleText = dimColor + lineText + resetColor;
+              const subtitleText = DIM_GREY + lineText + resetColor;
               // Create a simple line component for the subtitle
               const subtitleComponent = {
                 render(width: number) { return [subtitleText]; },
@@ -311,7 +304,7 @@ export default function (pi: ExtensionAPI) {
                    }
                    this.contentContainer.addChild(line(""));
                    this.contentContainer.addChild(
-                     new Text(`\x1b[38;2;140;140;140m${footerText}\x1b[0m`, 1, 0)
+                     new Text(`${DIM_GREY}${footerText}\x1b[0m`, 1, 0)
                    );
                 } else {
                    // Clean up duplicates even if it's not at the end
@@ -355,10 +348,9 @@ export default function (pi: ExtensionAPI) {
                 // shows `Thought for Ns` — live during streaming, locked in
                 // after message_end. Color matches the `✻ Worked for Xs`
                 // footer (`assistant-footer.ts`) so both labels look like
-                // siblings: DIM_GREY (`\x1b[38;2;140;140;140m`) with reset.
                 const label = getNativeThinkingLabel(message, "Thought...");
                 this.contentContainer.addChild(
-                  new Text(`\x1b[38;2;140;140;140m✻ ${label}\x1b[0m`, 1, 0)
+                  new Text(`${DIM_GREY}✻ ${label}\x1b[0m`, 1, 0)
                 );
               } else {
                 this.contentContainer.addChild(
@@ -397,29 +389,55 @@ export default function (pi: ExtensionAPI) {
         !ToolExecutionComponent.prototype.render.__compactui_patched
       ) {
         const originalRender = ToolExecutionComponent.prototype.render;
-        ToolExecutionComponent.prototype.render = function () {
+        ToolExecutionComponent.prototype.render = function (width: number) {
           const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
           if (this.toolName && !knownTools.includes(this.toolName)) {
+            const dummyTheme = {
+              fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
+            };
+            const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
+            const w = width || 100; // fallback if width not provided
+            
             if (!this.expanded) {
-              const dummyTheme = {
-                fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
-              };
-              const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
-              
               const resultLines: string[] = [];
               
               const callComp = compactCall(this.toolName, argsStr, dummyTheme);
-              resultLines.push(...callComp.render(100));
+              resultLines.push(...callComp.render(w));
               
               if (this.result) {
                 if (this.result.isError) {
-                  resultLines.push(...compactFailed(dummyTheme).render(100));
+                  resultLines.push(...compactFailed(dummyTheme).render(w));
                 } else {
                   const fullText = this.result.content?.[0]?.text || "";
                   const lineCount = fullText ? fullText.split("\n").length : 0;
-                  resultLines.push(...compactSummary(dummyTheme, `${this.toolName} output`, lineCount, "line").render(100));
+                  resultLines.push(...compactSummary(dummyTheme, `${this.toolName} output`, lineCount, "line").render(w));
                 }
               }
+              
+              return resultLines;
+            } else {
+              // Expanded view for unknown tools
+              const resultLines: string[] = [];
+              const durationS = (this.result?.details?._durationS as number) ?? -1;
+              
+              if (this.result) {
+                if (this.result.isError) {
+                  // Show expanded error with │ prefix
+                  const errText = this.result.content?.[0]?.text || "failed";
+                  const errLines = errText.split("\n");
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, errLines, durationS, 40).render(w));
+                } else {
+                  // expandedBox includes its own header
+                  const fullText = this.result.content?.[0]?.text || "";
+                  const lines = fullText.split("\n");
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(w));
+                }
+              } else {
+                // Still running - show running status with │ prefix
+                const runningLines = [`${this.toolName} running...`];
+                resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, runningLines, -1, 40).render(w));
+              }
+              
               return resultLines;
             }
           }
@@ -686,7 +704,7 @@ export default function (pi: ExtensionAPI) {
 
       const numberedLines = lines.map((line: string, i: number) => {
         const num = String(offset + i).padStart(4, " ");
-        return `${num}  ${line}`;
+        return `\x1b[97m${num}\x1b[39m  ${line}`;
       });
 
       return expandedBox(theme, "read", label, numberedLines, durationS, 40);
@@ -729,7 +747,7 @@ export default function (pi: ExtensionAPI) {
 
       const numberedLines = lines.map((line: string, i: number) => {
         const num = String(i + 1).padStart(4, " ");
-        return `${num}  ${line}`;
+        return `\x1b[97m${num}\x1b[39m  ${line}`;
       });
 
       return expandedBox(theme, "write", filePath, numberedLines, durationS, 40);
@@ -843,7 +861,7 @@ export default function (pi: ExtensionAPI) {
       const durationS = (details?._durationS as number) ?? -1;
       const cmd =
         context.args.command || (details?.command as string) || "";
-      return expandedBox(theme, "bash", cmd, lines, durationS, 50);
+      return expandedBox(theme, "bash", cmd, lines, durationS, 40);
     },
   });
 
@@ -878,7 +896,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "ls", context.args.path || ".", lines, durationS, 50);
+      return expandedBox(theme, "ls", context.args.path || ".", lines, durationS, 40);
     },
   });
 
@@ -913,7 +931,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, durationS, 50);
+      return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, durationS, 40);
     },
   });
 
@@ -959,7 +977,7 @@ export default function (pi: ExtensionAPI) {
           (context.args.path ? " " + context.args.path : ""),
         lines,
         durationS,
-        50
+        40
       );
     },
   });

@@ -13,6 +13,7 @@ interface _CBOpts {
 	expanded?: boolean;
 	footerAlways?: boolean;
 	suffix?: string;
+	theme?: any;
 }
 
 class CompactResult implements Component {
@@ -23,16 +24,16 @@ class CompactResult implements Component {
 	invalidate(): void { this.cachedWidth = undefined; this.cachedLines = undefined; }
 	render(width: number): string[] {
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways } = this.opts;
+		const { toolName, argsLine, suffix, footer, state, previewLines, expanded, footerAlways, theme } = this.opts;
 		const lines: string[] = [];
 		const dot = '';
-		let header = ` \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
+		let header = theme ? theme.fg("toolTitle", theme.bold(toolName)) : ` \x1b[38;2;255;165;0m${toolName}\x1b[0m`;
 		if (suffix) header += ` ${suffix}`;
 		lines.push(truncateToWidth(header, width));
 		if (expanded) {
-			if (argsLine) lines.push(truncateToWidth(`  │ ${argsLine}`, width));
-			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${pl}`, width));
-			if (footer) lines.push(truncateToWidth(`  └ ${footer}`, width));
+			if (argsLine) lines.push(truncateToWidth(`  │ ${theme ? theme.fg("toolOutput", argsLine) : argsLine}`, width));
+			if (previewLines) for (const pl of previewLines) lines.push(truncateToWidth(`  │ ${theme ? theme.fg("toolOutput", pl) : pl}`, width));
+			if (footer) lines.push(truncateToWidth(`  └ ${theme ? theme.fg("muted", footer) : footer}`, width));
 		} else {
 			// Single-line compact mode
 			const parts: string[] = [`(${truncateToWidth(argsLine, Math.max(10, width - 26))})`, "(ctrl+o to expand)"];
@@ -675,18 +676,18 @@ export default function (pi: ExtensionAPI) {
 			};
 		},
 		renderCall() { return emptyComponent; },
-		renderResult(result, { isPartial, expanded }) {
+		renderResult(result, { isPartial, expanded }, theme) {
 		if (!(globalThis as any).__pi_betterui_enabled) return emptyComponent;
-			if (isPartial) return new CompactResult({ toolName: "questions", argsLine: "prompting...", state: "pending" });
+			if (isPartial) return new CompactResult({ toolName: "questions", argsLine: "prompting...", state: "pending", theme });
 			const content = result.content[0];
 			const text = content?.type === "text" ? content.text : "";
 			if (result.isError || text.startsWith("Error")) {
 				const firstLine = text.split("\n")[0] || "error";
-				return new CompactResult({ toolName: "questions", argsLine: firstLine, state: "error" });
+				return new CompactResult({ toolName: "questions", argsLine: firstLine, state: "error", theme });
 			}
 			const details = result.details as QuestionsResult | undefined;
 			if (details?.cancelled) {
-				return new CompactResult({ toolName: "questions", argsLine: "cancelled", state: "done" });
+				return new CompactResult({ toolName: "questions", argsLine: "cancelled", state: "done", theme });
 			}
 			const allLines = text.split("\n").filter((l) => l.trim());
 			const argsLine = details?.answers.length !== undefined ? `${details.answers.length} answer${details.answers.length === 1 ? "" : "s"}` : "done";
@@ -701,6 +702,7 @@ export default function (pi: ExtensionAPI) {
 				previewLines,
 				footer: allLines.length > 0 ? `${allLines.length} line${allLines.length === 1 ? "" : "s"}` : undefined,
 				expanded,
+				theme,
 			});
 		},
 	});
