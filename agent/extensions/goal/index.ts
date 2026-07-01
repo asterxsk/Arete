@@ -290,20 +290,8 @@ export default function (pi: ExtensionAPI) {
 		(globalThis as any)[BRIDGE_KEY + "_config"] = { maxTurns, maxDurationMs };
 	});
 
-	// Register escape key to cancel the current goal
-	pi.registerShortcut("escape", {
-		description: "Cancel the active goal",
-		handler: async (_ctx) => {
-			if (!goal) return;
-			const clearedText = goal.text;
-			const turnsUsed = goal.turns;
-			readBridge()?.addHistory({ text: clearedText, completedAt: Date.now(), outcome: "cleared", turnsUsed });
-			goal = null;
-			clearWidget(_ctx);
-			delete (globalThis as any)[BRIDGE_KEY + "_state"];
-			if (_ctx.hasUI) _ctx.ui.notify(`Goal cancelled: ${truncate(clearedText, 60)} (${turnsUsed} turns)`, "info");
-		},
-	});
+	// Note: escape key is reserved by built-in shortcuts
+	// Use /goal clear to cancel the active goal
 
 	pi.registerCommand("goal", {
 		description:
