@@ -129,7 +129,7 @@ function getWidgetComponent(): (tui: any, theme: any) => { render: () => string[
 		render: () => {
 			if (!goal) return [];
 			const prefix = theme.fg("accent", "\u273b Goal ");
-			return [`${prefix}${theme.fg("default", truncate(goal.text, 80))}`];
+			return [`${prefix}${truncate(goal.text, 80)}`];
 		},
 		invalidate: () => {},
 	});
