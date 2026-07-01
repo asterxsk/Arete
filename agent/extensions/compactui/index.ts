@@ -392,12 +392,12 @@ export default function (pi: ExtensionAPI) {
         ToolExecutionComponent.prototype.render = function () {
           const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
           if (this.toolName && !knownTools.includes(this.toolName)) {
+            const dummyTheme = {
+              fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
+            };
+            const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
+            
             if (!this.expanded) {
-              const dummyTheme = {
-                fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
-              };
-              const argsStr = typeof this.args === "string" ? this.args : JSON.stringify(this.args || {});
-              
               const resultLines: string[] = [];
               
               const callComp = compactCall(this.toolName, argsStr, dummyTheme);
@@ -419,6 +419,28 @@ export default function (pi: ExtensionAPI) {
                 let firstLine = resultLines[0];
                 if (firstLine.startsWith(" ")) firstLine = firstLine.substring(1);
                 resultLines[0] = " " + dot.trim() + " " + firstLine;
+              }
+              
+              return resultLines;
+            } else {
+              // Expanded view for unknown tools
+              const resultLines: string[] = [];
+              const durationS = (this.result?.details?._durationS as number) ?? -1;
+              
+              const callComp = compactCall(this.toolName, argsStr, dummyTheme);
+              resultLines.push(...callComp.render(100));
+              
+              if (this.result) {
+                if (this.result.isError) {
+                  resultLines.push(...compactFailed(dummyTheme).render(100));
+                } else {
+                  const fullText = this.result.content?.[0]?.text || "";
+                  const lines = fullText.split("\n");
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(100));
+                }
+              } else {
+                // Still running - show spinner
+                resultLines.push(...compactSummary(dummyTheme, `${this.toolName} running`, 0, "").render(100));
               }
               
               return resultLines;
