@@ -1,9 +1,9 @@
 /**
  * toolkit/statusline — status line footer with provider, model, context usage, and file changes.
  *
- * Renders a two-line footer:
- *   Line 1: <provider>                    <context bar>
- *   Line 2: └ <model>                     <file changes>
+ * Renders a footer:
+ *   Line 1: <provider> × <model>           <context bar>
+ *   Line 2: <file changes>
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -138,9 +138,30 @@ export default function (pi: ExtensionAPI) {
 	let contextPercent = 0;
 	let contextTokens = 0;
 	let contextWindow = 0;
+	let cwd = "";
+	let inputTokens = 0;
+	let outputTokens = 0;
 	let requestRender: (() => void) | undefined;
 	let throttleTimer: ReturnType<typeof setTimeout> | undefined;
 	let throttlePending = false;
+
+	// ── Home-dir shorthand ───────────────────────────────────────────────
+	function shortenPath(p: string): string {
+		if (!p) return "";
+		// Normalize to forward slashes for matching
+		const norm = p.replace(/\\/g, "/");
+		// Match common home dir patterns on Windows and Unix
+		const homePatterns = [
+			/^[A-Z]:\/Users\/[^/]+/i,   // Windows C:\Users\username
+			/^\/home\/[^/]+/,           // Unix /home/username
+			/^\/Users\/[^/]+/,          // macOS /Users/username
+		];
+		for (const pat of homePatterns) {
+			const m = norm.match(pat);
+			if (m) return "~" + norm.slice(m[0].length);
+		}
+		return p;
+	}
 
 	function refreshModel(ctx: any): void {
 		if (!ctx?.model) return;
@@ -149,12 +170,34 @@ export default function (pi: ExtensionAPI) {
 		model = shortModel(raw);
 	}
 
+	function accumulateUsage(ctx: any): void {
+		try {
+			const branch = ctx.sessionManager?.getBranch?.();
+			if (!branch) return;
+			let totalIn = 0;
+			let totalOut = 0;
+			for (const entry of branch) {
+				if (entry.type === "message" && entry.message?.role === "assistant") {
+					const usage = entry.message.usage;
+					if (usage) {
+						totalIn += usage.input || 0;
+						totalOut += usage.output || 0;
+					}
+				}
+			}
+			inputTokens = totalIn;
+			outputTokens = totalOut;
+		} catch { /* ignore */ }
+	}
+
 	function refresh(ctx: any): void {
 		refreshModel(ctx);
 		const info = getContextSafe(ctx);
 		contextPercent = info.percent;
 		contextTokens = info.tokens;
 		contextWindow = info.window;
+		cwd = ctx.cwd || "";
+		accumulateUsage(ctx);
 		requestRender?.();
 	}
 
@@ -168,28 +211,34 @@ export default function (pi: ExtensionAPI) {
 				dispose() { requestRender = undefined; },
 				invalidate() {},
 				render(width: number): string[] {
-					// ── Line 1: provider ──────────────────────────
-					const prov = provider
-						? paint(C.orange, "\uf233") + " " + paint(C.orange, provider)
-						: "";
-
-					// ── Line 2: model ─────────────────────────────
-					const mdlLine = model
-						? "\u2514 " + model
-						: "";
+					// ── Line 1: provider × model ───────────────────
+					const provModel = provider && model
+						? paint(WHITE, provider) + " " + "×" + " " + model
+						: provider
+							? paint(WHITE, provider)
+							: model
+								? model
+								: "";
 
 					// ── Right: context bar + file changes ──────────
 					const bar = buildGradientBar(contextPercent);
 					const tokenStr = contextWindow > 0
 						? `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`
 						: `${formatTokens(contextTokens)}`;
-					const ctxPart = "\uf080"
-						+ " [" + bar + "] "
+					const ctxPart = "※ "
+						+ "[" + bar + "] "
 						+ paint(WHITE, tokenStr);
 
 					const compactCue = contextPercent > 90
 						? "  " + paint(C.red, "\uf06a") + " " + paint(WHITE, "compact!")
 						: "";
+
+					// ── Token counts ────────────────────────────────
+					let tokenPart = "";
+					if (inputTokens > 0 || outputTokens > 0) {
+						tokenPart = paint(WHITE, "\u2191" + formatTokens(inputTokens))
+							+ " " + paint(WHITE, "\u2193" + formatTokens(outputTokens));
+					}
 
 					const counts = (globalThis as any).__pi_filechanges_counts as
 						{ edited: number; created: number } | undefined;
@@ -203,20 +252,22 @@ export default function (pi: ExtensionAPI) {
 						fcPart = " " + parts.join(" ");
 					}
 
+					const line2Right = tokenPart + fcPart;
+
 					// ── Align lines ─────────────────────────────────
 					const lines: string[] = [];
-					if (prov) {
+					if (provModel) {
 						const line1Right = ctxPart + compactCue;
 						const rightW = visibleWidth(line1Right);
 						const avail = width - rightW - 1;
-						const left = truncateToWidth(prov, Math.max(0, avail), "", true);
+						const left = truncateToWidth(provModel, Math.max(0, avail), "", true);
 						lines.push(left + line1Right);
 					}
-					if (mdlLine) {
-						const line2Right = fcPart;
+					if (line2Right || cwd) {
 						const rightW = visibleWidth(line2Right);
-						const avail = width - rightW - 1; // 1-char right margin
-						const left = truncateToWidth(mdlLine, Math.max(0, avail), "", true);
+						const avail = width - rightW - 1;
+						const pathStr = cwd ? paint(C.blue, shortenPath(cwd)) : "";
+						const left = truncateToWidth(pathStr, Math.max(0, avail), "", true);
 						lines.push(left + line2Right);
 					}
 					return lines;
@@ -252,6 +303,7 @@ export default function (pi: ExtensionAPI) {
 		contextPercent = info.percent;
 		contextTokens = info.tokens;
 		contextWindow = info.window;
+		accumulateUsage(ctx);
 		if (!throttlePending) {
 			throttlePending = true;
 			throttleTimer = setTimeout(() => {
