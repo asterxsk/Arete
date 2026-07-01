@@ -74,8 +74,9 @@ export function formatDur(s: number): string {
 
 export function wrapWithPrefix(rl: string, width: number): string[] {
   const visible = rl.replace(/\x1b\[[0-9;]*m/g, "");
-  // Match prefix: optional leading spaces, then │ or └, then trailing space(s)
-  const match = visible.match(/^(\s*(?:\u2502|\u2514)\s*)/);
+  // Match prefix: leading spaces + │ or └ + trailing spaces
+  // This handles formats like " │ " or "└ " or just "│ "
+  const match = visible.match(/^(\s*[\u2502\u2514]\s*)/);
   if (!match || match[1].length === 0) return wrapTextWithAnsi(rl, width);
 
   const prefixLen = match[1].length;
@@ -105,8 +106,8 @@ export function wrapWithPrefix(rl: string, width: number): string[] {
   if (wrappedContent.length === 0) return [ansiPrefix];
 
   const result = [ansiPrefix + wrappedContent[0]];
-  // Subsequent lines get the same prefix (spaces + │)
-  const subsequentPrefixStr = match[1].replace(/[^\s]/g, " ");
+  // Subsequent lines preserve the exact same prefix
+  const subsequentPrefixStr = match[1];
   for (let j = 1; j < wrappedContent.length; j++) {
     result.push(subsequentPrefixStr + wrappedContent[j]);
   }
