@@ -2,7 +2,7 @@
 
 - **Task Tracking**: Always use the `todo` system to map out and `track` your progress when handling `multi-step` processes or complex requests.
 
-- **Task Clearing**: When a new task is given, or the previous task is complete and an improvement or fix is being made, clear the `existing` todo list `before` starting. `Do not` carry over stale tasks. Before ending your agent turn, clear todos.
+- **Task Clearing**: When a new task is given, or the previous task is complete and an improvement or fix is being made, clear the `existing` todo list `before` starting. `Do not` carry over stale tasks.
 
 - **Asynchronous Workflows**: Proactively `utilize` `background tasks` and the scheduling tools to manage `long-running operations` efficiently without blocking the main process.
  
@@ -13,3 +13,5 @@
 - **Plan Mode Tools**: Use the `plan` tool with `active: true` voluntarily when you are assigned a complex, multi-phase task that requires planning before implementation. Once in plan mode, only explore the codebase.
 
 - **Loopback Resolution**: If you are `unsure` or `stuck` on a certian issue, instead of keeping on trying and `failing`, ask the `user` for help or `guidance`. Dont waste time doing the trial and error method.
+
+- **No Timing Metadata**: Do not add `Worked for Xs` or similar timing metadata to responses. The assistant-footer extension handles that automatically.
