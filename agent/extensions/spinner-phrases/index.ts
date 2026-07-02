@@ -75,14 +75,30 @@ let frameIndex = 0;
 let frameHoldCounter = 0;
 let tickCount = 0;
 let currentCtx: any = null;
+let outputTokens = 0;
+let lastBranchLength = 0;
+let turnStartBranchLength = 0; // Branch length at start of current turn
 
-// Typewriter transition state, driven by the same 250ms tick as the spinner.
-const TRANSITION_EVERY_TICKS = 48; // 48 × 250ms = 12s
-let transitionState: "idle" | "erasing" | "typing" = "idle";
-let displayedPhrase = "";
-let targetPhrase = "";
-let transitionIdx = 0;
-let pendingPhraseIndex = 0;
+// Thinking state (DISABLED for now)
+// let isThinking = false;
+// let thinkingStartedAt = 0;
+// let thinkingDisplayed = "";
+// const THINKING_DELAY_MS = 2000; // Only show "thinking" after 2 seconds
+let isThinking = false;
+let thinkingStartedAt = 0;
+let thinkingDisplayed = "";
+
+// Glow effect constants
+const GLOW_SPEED_CPS = 4; // Characters per second
+const GLOW_END_DELAY_MS = 300; // Pause at each end before reversing
+const TICK_MS = 80; // Animation tick interval
+const GLOW_STEP = GLOW_SPEED_CPS * (TICK_MS / 1000); // chars per tick
+const GLOW_RADIUS = 1; // 3 characters total (center + 1 on each side)
+
+// Glow effect state
+let glowPosition = 0;
+let glowDirection = 1; // 1 = right, -1 = left
+let glowPauseTicks = 0; // remaining pause ticks when at an end
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -119,67 +135,154 @@ function advanceFrame(): void {
 	}
 }
 
-function buildFullText(phrase: string): string {
-	const elapsed = Math.floor((Date.now() - startTime) / 1000);
-	const timeStr = formatElapsed(elapsed);
-	// Read goal text from the goal extension's bridge
-	const goalBridge = (globalThis as any)["__pi_goal_state"];
-	const goalText = goalBridge?.getDisplayText?.() || "";
-	const goalPart = goalText ? ` - 𖤍 ${goalText}` : "";
-	const plain = `${getCurrentFrame()} ${phrase} (${timeStr})${goalPart}`;
-	return `${ORANGE}${plain}${RESET}`;
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	return `${(count / 1000000).toFixed(1)}M`;
 }
 
-function clearTransition(): void {
-	transitionState = "idle";
-	displayedPhrase = "";
-	targetPhrase = "";
-	transitionIdx = 0;
+// Thinking animation (DISABLED for now)
+function startThinkingAnimation(): void {
+	// DISABLED: Reset any previous state
+	// isThinking = true;
+	// thinkingStartedAt = Date.now();
+	// thinkingDisplayed = "";
+	isThinking = false; // Keep disabled
 }
 
-function finishTransition(): void {
-	phraseIndex = pendingPhraseIndex;
-	clearTransition();
+function stopThinkingAnimation(): void {
+	// DISABLED
+	// isThinking = false;
+	// thinkingStartedAt = 0;
+	// thinkingDisplayed = ""; // Clear immediately
+	isThinking = false; // Keep disabled
 }
 
-function startTransition(): void {
-	pendingPhraseIndex = (phraseIndex + 1) % PHRASES.length;
-	targetPhrase = PHRASES[pendingPhraseIndex]! + "...";
-	displayedPhrase = PHRASES[phraseIndex]! + "...";
-	transitionState = "erasing";
-	transitionIdx = displayedPhrase.length;
+function updateThinkingDisplay(): void {
+	// DISABLED: thinking display for now
+	// if (!isThinking || thinkingStartedAt === 0) {
+	// 	thinkingDisplayed = "";
+	// 	return;
+	// }
+	// const elapsed = Date.now() - thinkingStartedAt;
+	// if (elapsed >= THINKING_DELAY_MS) {
+	// 	thinkingDisplayed = "thinking";
+	// } else {
+	// 	thinkingDisplayed = "";
+	// }
+	thinkingDisplayed = ""; // Always empty when disabled
 }
 
-function transitionStep(): void {
-	if (transitionState === "erasing") {
-		transitionIdx--;
-		displayedPhrase = displayedPhrase.slice(0, Math.max(0, transitionIdx));
-		if (transitionIdx <= 0) {
-			transitionState = "typing";
-			transitionIdx = 0;
+function getStatusText(): string {
+	return thinkingDisplayed;
+}
+
+// Apply white glow effect to text
+function applyGlow(text: string): string {
+	if (text.length === 0) return text;
+
+	updateGlow(text.length);
+
+	const WHITE = "\x1b[97m"; // Bright white
+	const RESET = "\x1b[39m";
+	
+	let result = "";
+	for (let i = 0; i < text.length; i++) {
+		const distance = Math.abs(i - glowPosition);
+		if (distance <= GLOW_RADIUS) {
+			// Calculate brightness based on distance (closer = brighter)
+			const brightness = 1 - (distance / GLOW_RADIUS);
+			// Use bright white for glow effect
+			if (brightness > 0.5) {
+				result += WHITE + text[i] + RESET;
+			} else {
+				result += text[i];
+			}
+		} else {
+			result += text[i];
 		}
-	} else if (transitionState === "typing") {
-		transitionIdx++;
-		displayedPhrase = targetPhrase.slice(0, transitionIdx);
-		if (transitionIdx >= targetPhrase.length) {
-			finishTransition();
+	}
+	return result;
+}
+
+// Update glow position: sweep left-to-right, pause, sweep right-to-left, pause.
+function updateGlow(textLength: number): void {
+	if (textLength <= 1) {
+		glowPosition = 0;
+		return;
+	}
+
+	const maxPos = textLength - 1;
+
+	if (glowPauseTicks > 0) {
+		glowPauseTicks--;
+		if (glowPauseTicks === 0) {
+			glowDirection *= -1;
 		}
+		return;
+	}
+
+	glowPosition += glowDirection * GLOW_STEP;
+
+	if (glowPosition >= maxPos) {
+		glowPosition = maxPos;
+		glowPauseTicks = Math.round(GLOW_END_DELAY_MS / TICK_MS);
+	} else if (glowPosition <= 0) {
+		glowPosition = 0;
+		glowPauseTicks = Math.round(GLOW_END_DELAY_MS / TICK_MS);
 	}
 }
 
+function updateOutputTokens(): void {
+	try {
+		if (!currentCtx) return;
+		const branch = currentCtx.sessionManager?.getBranch?.();
+		if (!branch) return;
+		// Skip if branch hasn't changed
+		if (branch.length === lastBranchLength) return;
+		lastBranchLength = branch.length;
+		// Only count tokens from messages added since turn started
+		let total = 0;
+		const entries = branch.slice(turnStartBranchLength);
+		for (const entry of entries) {
+			if (entry.type === "message" && entry.message?.role === "assistant") {
+				const usage = entry.message.usage;
+				if (usage) total += usage.output || 0;
+			}
+		}
+		outputTokens = total;
+	} catch { /* ignore */ }
+}
+
+function buildFullText(phrase: string): string {
+	updateOutputTokens();
+	const elapsed = Math.floor((Date.now() - startTime) / 1000);
+	const timeStr = formatElapsed(elapsed);
+	const status = getStatusText();
+	// Check if goal is active (just presence, not the text)
+	const goalBridge = (globalThis as any)["__pi_goal_state"];
+	const hasGoal = goalBridge?.getGoal?.() != null;
+	const goalPart = hasGoal ? ` - 𖤍 Goal active` : "";
+	const tokenPart = outputTokens > 0 ? ` · \u2193${formatTokens(outputTokens)}` : "";
+	// Only show status if thinking has been going on for more than 2 seconds
+	const statusPart = status ? ` · ${status}` : "";
+	// Apply glow effect to the phrase
+	const glowingPhrase = applyGlow(phrase);
+	const plain = `${getCurrentFrame()} ${glowingPhrase} (${timeStr}${tokenPart}${statusPart})${goalPart}`;
+	return `${ORANGE}${plain}${RESET}`;
+}
+
+// Phrase changes only on agent turn, no typewriter needed for phrase
 function getPhraseText(): string {
-	if (transitionState !== "idle") return displayedPhrase;
 	return PHRASES[phraseIndex % PHRASES.length]! + "...";
 }
 
 // ── Animation tick ─────────────────────────────────────────────────
 
 function tick(): void {
-	if (transitionState !== "idle") {
-		transitionStep();
-	} else if (tickCount > 0 && tickCount % TRANSITION_EVERY_TICKS === 0) {
-		startTransition();
-	}
+	// Update thinking display
+	updateThinkingDisplay();
 
 	pushToUI(buildFullText(getPhraseText()));
 
@@ -197,29 +300,38 @@ function start(ctx: any): void {
 		return;
 	}
 
-	clearTransition();
 	startTime = Date.now();
-	phraseIndex = Math.floor(Math.random() * PHRASES.length);
+	// Only initialize phraseIndex if not already set (before_agent_start sets it)
+	if (phraseIndex === 0) {
+		phraseIndex = Math.floor(Math.random() * PHRASES.length);
+	}
 	frameIndex = 0;
 	frameHoldCounter = 0;
 	tickCount = 0;
+	glowPosition = 0;
+	glowDirection = 1;
+	glowPauseTicks = 0;
+	startThinkingAnimation();
 
 	ctx.ui.setWorkingIndicator({ frames: [] });
 
 	tick();
-	intervalId = setInterval(tick, 130);
+	intervalId = setInterval(tick, 80); // Faster tick for smoother typewriter
 }
 
 function stop(): void {
-	clearTransition();
-	if (intervalId !== null) {
-		clearInterval(intervalId);
-		intervalId = null;
-	}
-	if (currentCtx?.hasUI) {
-		currentCtx.ui.setWorkingIndicator(undefined);
-		currentCtx.ui.setWorkingMessage(undefined);
-	}
+	stopThinkingAnimation();
+	// Let the erasing animation play out before clearing
+	setTimeout(() => {
+		if (intervalId !== null) {
+			clearInterval(intervalId);
+			intervalId = null;
+		}
+		if (currentCtx?.hasUI) {
+			currentCtx.ui.setWorkingIndicator(undefined);
+			currentCtx.ui.setWorkingMessage(undefined);
+		}
+	}, 200); // Wait for erase animation
 }
 
 // ── Extension entry ────────────────────────────────────────────────
@@ -261,6 +373,17 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async () => {
 		if (currentCtx) {
+			// Change phrase on each agent turn
+			phraseIndex = (phraseIndex + 1) % PHRASES.length;
+			// Track branch length at start of turn for current-turn token counting
+			try {
+				const branch = currentCtx.sessionManager?.getBranch?.();
+				if (branch) turnStartBranchLength = branch.length;
+			} catch { /* ignore */ }
+			// Reset token count for new turn
+			outputTokens = 0;
+			lastBranchLength = 0;
+			// Start spinner if not already running
 			start(currentCtx);
 		}
 	});

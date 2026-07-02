@@ -22,6 +22,10 @@ Replaces the default "Working..." indicator with an animated star spinner, rotat
 - Timer persists across tool calls — `start()` returns early if already running
 - `stop()` clears interval, resets UI indicator and message
 - Orange color is hardcoded (255,180,60) — theme-independent
+- Glow effect sweeps a 3-char bright-white highlight across the phrase at 4 char/s, pausing 300ms at each end before reversing
+- Glow state machine: move → pause at edge → reverse → pause at opposite edge → repeat
+- `GLOW_SPEED_CPS`, `GLOW_END_DELAY_MS`, `GLOW_RADIUS` control glow behavior
+- Glow resets at session start; `applyGlow()` calls `updateGlow()` internally each tick
 - `demo()` function at bottom has self-tests (uncomment to run)
 
 ## Verification
