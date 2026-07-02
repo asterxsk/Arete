@@ -21,8 +21,6 @@
 
 # Un-ignore everything recursively inside extensions and themes
 !agent/extensions/**
-!agent/extensions/filechanges/node_modules/*
-!agent/extensions/pi-hermes-memory/node_modules/*
 !agent/themes/**
 
 # Re-ignore specific things inside extensions
@@ -30,6 +28,9 @@ agent/extensions/commandcode-provider/
 agent/extensions/kimchi-provider/
 agent/extensions/**/docs/
 agent/extensions/**/doc/
+
+# Re-ignore filechanges node_modules (accidentally staged — use git rm --cached)
+agent/extensions/filechanges/node_modules/
 
 # Explicitly ignore crash log (though * already ignores it, being explicit)
 agent/pi-crash.log
