@@ -137,9 +137,7 @@ export function setupBackgroundReview(
         reviewInProgress = false;
         if (result.code === 0 && result.stdout) {
           const output = result.stdout.trim();
-          if (output && !output.toLowerCase().includes("nothing to save")) {
-            ctx.ui.notify("Memory auto-reviewed and updated", "info");
-          }
+            // Notification suppressed — background review runs silently.
         }
       })
       .catch(() => {

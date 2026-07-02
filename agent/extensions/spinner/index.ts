@@ -16,9 +16,9 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// ── Orange colour ────────────────────────────────────────────────
+// ── Colour constants ────────────────────────────────────────────
 
-const ORANGE = "\x1b[38;2;255;180;60m";
+const ACCENT = "\x1b[38;2;240;160;80m"; // #f0a050 — arete accent orange
 const RESET = "\x1b[0m";
 
 // ── Star spinner frames ───────────────────────────────────────────
@@ -75,6 +75,7 @@ let frameIndex = 0;
 let frameHoldCounter = 0;
 let tickCount = 0;
 let currentCtx: any = null;
+let currentTheme: any = null; // Theme for accent colors
 let outputTokens = 0;
 let lastBranchLength = 0;
 let turnStartBranchLength = 0; // Branch length at start of current turn
@@ -89,16 +90,13 @@ let thinkingStartedAt = 0;
 let thinkingDisplayed = "";
 
 // Glow effect constants
-const GLOW_SPEED_CPS = 4; // Characters per second
-const GLOW_END_DELAY_MS = 300; // Pause at each end before reversing
+const GLOW_SPEED_CPS = 12; // Characters per second — fast sweep
 const TICK_MS = 80; // Animation tick interval
 const GLOW_STEP = GLOW_SPEED_CPS * (TICK_MS / 1000); // chars per tick
-const GLOW_RADIUS = 1; // 3 characters total (center + 1 on each side)
+const GLOW_WIDTH = 3; // Exactly 3 visible glow characters
 
 // Glow effect state
-let glowPosition = 0;
-let glowDirection = 1; // 1 = right, -1 = left
-let glowPauseTicks = 0; // remaining pause ticks when at an end
+let glowPosition = 0; // Leading edge position (rightmost glow char)
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -178,59 +176,35 @@ function getStatusText(): string {
 	return thinkingDisplayed;
 }
 
-// Apply white glow effect to text
-function applyGlow(text: string): string {
-	if (text.length === 0) return text;
+// Apply glow effect: 3-char highlight sweeping left to right, wrapping around
+// Returns array of {char, isGlow} for each character
+function applyGlow(text: string): { char: string; isGlow: boolean }[] {
+	if (text.length === 0) return [];
 
 	updateGlow(text.length);
 
-	const WHITE = "\x1b[97m"; // Bright white
-	const RESET = "\x1b[39m";
-	
-	let result = "";
+	const result: { char: string; isGlow: boolean }[] = [];
 	for (let i = 0; i < text.length; i++) {
-		const distance = Math.abs(i - glowPosition);
-		if (distance <= GLOW_RADIUS) {
-			// Calculate brightness based on distance (closer = brighter)
-			const brightness = 1 - (distance / GLOW_RADIUS);
-			// Use bright white for glow effect
-			if (brightness > 0.5) {
-				result += WHITE + text[i] + RESET;
-			} else {
-				result += text[i];
-			}
-		} else {
-			result += text[i];
-		}
+		// Glow window: glowPosition is the leading edge (rightmost)
+		const glowStart = glowPosition - GLOW_WIDTH + 1;
+		const isGlow = i >= glowStart && i <= glowPosition;
+		result.push({ char: text[i], isGlow });
 	}
 	return result;
 }
 
-// Update glow position: sweep left-to-right, pause, sweep right-to-left, pause.
+// Update glow position: sweep left-to-right, wrap to start.
 function updateGlow(textLength: number): void {
 	if (textLength <= 1) {
 		glowPosition = 0;
 		return;
 	}
 
-	const maxPos = textLength - 1;
+	glowPosition += GLOW_STEP;
 
-	if (glowPauseTicks > 0) {
-		glowPauseTicks--;
-		if (glowPauseTicks === 0) {
-			glowDirection *= -1;
-		}
-		return;
-	}
-
-	glowPosition += glowDirection * GLOW_STEP;
-
-	if (glowPosition >= maxPos) {
-		glowPosition = maxPos;
-		glowPauseTicks = Math.round(GLOW_END_DELAY_MS / TICK_MS);
-	} else if (glowPosition <= 0) {
+	// Wrap around when leading edge passes the end
+	if (glowPosition >= textLength) {
 		glowPosition = 0;
-		glowPauseTicks = Math.round(GLOW_END_DELAY_MS / TICK_MS);
 	}
 }
 
@@ -267,10 +241,34 @@ function buildFullText(phrase: string): string {
 	const tokenPart = outputTokens > 0 ? ` · \u2193${formatTokens(outputTokens)}` : "";
 	// Only show status if thinking has been going on for more than 2 seconds
 	const statusPart = status ? ` · ${status}` : "";
-	// Apply glow effect to the phrase
-	const glowingPhrase = applyGlow(phrase);
-	const plain = `${getCurrentFrame()} ${glowingPhrase} (${timeStr}${tokenPart}${statusPart})${goalPart}`;
-	return `${ORANGE}${plain}${RESET}`;
+	const stats = `(${timeStr}${tokenPart}${statusPart})`;
+	
+	// Apply glow effect only to the phrase (not stats)
+	const glowChars = applyGlow(phrase);
+	
+	// Render with glow effect on phrase only
+	const GREY = "\x1b[2m";
+	const GLOW = "\x1b[97m"; // Bright white for glow
+	let phraseResult = "";
+	
+	// Helper to apply accent color (theme-aware or fallback)
+	const accent = (text: string): string => {
+		if (currentTheme?.fg) return currentTheme.fg("accent", text);
+		return ACCENT + text + RESET;
+	};
+	
+	for (let i = 0; i < glowChars.length; i++) {
+		const { char, isGlow } = glowChars[i];
+		if (isGlow) {
+			// Glow character - bright white
+			phraseResult += GLOW + char + RESET;
+		} else {
+			// Phrase character (not glow) - accent color
+			phraseResult += accent(char);
+		}
+	}
+	
+	return `${accent(getCurrentFrame())} ${phraseResult} ${GREY}${stats}${RESET}${goalPart}`;
 }
 
 // Phrase changes only on agent turn, no typewriter needed for phrase
@@ -294,6 +292,7 @@ function tick(): void {
 
 function start(ctx: any): void {
 	currentCtx = ctx;
+	currentTheme = ctx.ui?.theme; // Capture theme for accent colors
 
 	if (intervalId !== null) {
 		// Already running between tool calls; keep the same timer and elapsed time.
@@ -309,8 +308,6 @@ function start(ctx: any): void {
 	frameHoldCounter = 0;
 	tickCount = 0;
 	glowPosition = 0;
-	glowDirection = 1;
-	glowPauseTicks = 0;
 	startThinkingAnimation();
 
 	ctx.ui.setWorkingIndicator({ frames: [] });
@@ -338,8 +335,8 @@ function stop(): void {
 
 export default function (pi: ExtensionAPI) {
 	(globalThis as any).__pi_extension_features?.push({
-		name: "spinner-phrases",
-		description: "Animated star spinner with fun Claude Code–style phrases",
+		name: "spinner",
+		description: "Animated star spinner with theme-aware accent color and fun phrases",
 	});
 
 	pi.on("session_start", async (_event: any, ctx: any) => {

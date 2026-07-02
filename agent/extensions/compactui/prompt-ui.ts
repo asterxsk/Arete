@@ -33,7 +33,7 @@ export function initPromptUi(): void {
       box.invalidateCache?.();
     }
 
-    const bg = "\x1b[48;2;55;55;55m";
+    const bg = "\x1b[48;2;58;58;58m";
     const resetBg = "\x1b[49m";
     const prefix = " \u276f ";
     const prefixW = visibleWidth(prefix);

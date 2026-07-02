@@ -4,7 +4,6 @@
  * Entry point. Imports and wires together:
  *   - rendering.ts    — shared rendering primitives
  *   - patch-tools.ts  — tool patching interception
- *   - thinking-block.ts — thinking block component & hiding
  *   - assistant-footer.ts — duration footer on assistant messages
  *   - prompt-ui.ts    — user message prompt styling
  *   - tool-status-dot.ts — animated status dot for running tools
@@ -14,6 +13,7 @@ import type { ExtensionAPI, EditToolDetails } from "@earendil-works/pi-coding-ag
 import {
   AssistantMessageComponent,
   BashExecutionComponent,
+  CompactionSummaryMessageComponent,
   CustomMessageComponent,
   InteractiveMode,
   ToolExecutionComponent,
@@ -29,10 +29,9 @@ import { Markdown, Text, Container, Spacer, truncateToWidth } from "@earendil-wo
 
 import {
   line, noOp, orange, compactCall, compactSummary, compactFailed,
-  formatDur, expandedBox, diffExpandedBox, captureResult, INDENT, DIM_GREY,
+  expandedBox, diffExpandedBox, captureResult, INDENT, DIM_GREY,
 } from "./rendering.js";
 import { patchTool, TRUNCATED_TOOLS, KNOWN_TOOLS, MAX_LINES } from "./patch-tools.js";
-import { ThinkingBlock, colorThinkingText, initHideThinking } from "./thinking-block.js";
 import { initAssistantFooter } from "./assistant-footer.js";
 import { initPromptUi } from "./prompt-ui.js";
 import { initToolStatusDot } from "./tool-status-dot.js";
@@ -40,79 +39,6 @@ import { initToolStatusDot } from "./tool-status-dot.js";
 // ── State ──────────────────────────────────────────────────────────────
 
 let patchedAssistant = false;
-
-// ── Native Thinking Duration Tracking ───────────────────────────────────
-//
-// The upstream pi-mono framework (per `docs/plans/thinking.md`) renders
-// native `type: "thinking"` blocks with a duration-aware label:
-//
-//     ✻ Thinking for Ns    (live while streaming; sub-second rounds to 1s)
-//     ✻ Thought for Ns     (locked in after message_end)
-//
-// The user's installed framework version does not expose the per-block
-// duration to extensions, so we track start/end ourselves on the
-// AssistantMessage itself via a non-enumerable Symbol-keyed property. The
-// property travels with the message reference across streaming updates,
-// `message_end`, `_replaceMessageInPlace`, and `buildSessionContext()`
-// rebuilds — so a WeakMap keyed on the message is unnecessary, and
-// immune to any reference-identity gotchas that would cause the entry
-// to be missed.
-//
-// While the message is still streaming, we use the live elapsed time so the
-// hidden label shows a live counter from the moment Ctrl+T is pressed. The
-// verb flips to `Thought for Ns` when either:
-//   1. `endMs` is set by the message_end event handler, or
-//   2. `stopReason` is set on the message (provider-dependent).
-// Checking both gives us coverage regardless of provider. For entries we
-// never tracked (pre-existing entries from disk or messages that already
-// had stopReason when first seen), we fall back to `✻ Thought...`.
-
-const THINKING_TIMING_KEY = Symbol.for("compactui.nativeThinkingTiming");
-
-interface ThinkingTiming {
-  startMs: number;
-  endMs?: number;
-}
-
-function getTiming(message: object): ThinkingTiming | undefined {
-  return (message as any)[THINKING_TIMING_KEY] as ThinkingTiming | undefined;
-}
-
-function recordNativeThinkingStart(message: object): void {
-  if (!(message as any)[THINKING_TIMING_KEY]) {
-    Object.defineProperty(message, THINKING_TIMING_KEY, {
-      value: { startMs: Date.now() },
-      writable: true,
-      configurable: true,
-      enumerable: false,
-    });
-  }
-}
-
-function recordNativeThinkingEnd(message: object): void {
-  const timing = getTiming(message);
-  if (timing) timing.endMs = Date.now();
-}
-
-function getNativeThinkingLabel(message: object, fallback: string): string {
-  const timing = getTiming(message);
-  if (!timing) return fallback;
-  // Use the live elapsed time so the label shows a live counter from the
-  // moment Ctrl+T is pressed. The verb stays "Thinking for Ns" while the
-  // message is still streaming (no stopReason). Once the agent finishes
-  // and sets stopReason ("stop", "toolUse", "length", "error"), the verb
-  // locks to "Thought for Ns" — no dependency on the message_end event.
-  // Sub-second durations round up to "1s" (per user preference) rather
-  // than the upstream framework's "Thought for <1s".
-  const durMs = (timing.endMs ?? Date.now()) - timing.startMs;
-  const secs = Math.max(1, Math.round(durMs / 1000));
-  // The verb flips to "Thought" when either:
-  // - endMs was set by the message_end event handler (most reliable)
-  // - stopReason is set on the message (provider-dependent; minimax may
-  //   omit it). Checking both gives us coverage regardless of provider.
-  const hasEnded = !!(timing.endMs ?? (message as any).stopReason);
-  return hasEnded ? `Thought for ${secs}s` : `Thinking for ${secs}s`;
-}
 
 // ── Main Extension ─────────────────────────────────────────────────────
 
@@ -179,8 +105,18 @@ export default function (pi: ExtensionAPI) {
           // Hold skill invocation components to reorder them below user message
           let pendingSkillComponent: any = null;
           
+          // Tools to completely hide (no rendering, no spacing)
+          const HIDDEN_TOOLS = new Set(["todo", "grep", "find", "ls"]);
+          
           chatContainer.addChild = function (...args: any[]) {
             const component = args[0];
+            
+            // Skip hidden tool components entirely (no render, no spacing)
+            if (component && typeof component === "object" &&
+                component.constructor?.name === "ToolExecutionComponent" &&
+                component.toolName && HIDDEN_TOOLS.has(component.toolName)) {
+              return;
+            }
             
             // Detect SkillInvocationMessageComponent (skill block)
             // We identify it by checking for skillBlock property and the component type
@@ -237,14 +173,32 @@ export default function (pi: ExtensionAPI) {
               }
             }
 
-            // Non-spacer incoming: consume the held spacer (if any) OR inject
-            // a fresh Spacer(1) above when the container already has content.
-            if (lastSpacerArgs) {
-              originalAddChild.apply(this, lastSpacerArgs);
-              lastSpacerArgs = null;
-            } else if (this.children.length > 0) {
-              originalAddChild.call(this, new Spacer(1));
+            // Non-spacer incoming: inject a spacer if the container doesn't
+            // already end with a blank line (either from a held spacer or implicitly).
+            let needsSpacer = this.children.length > 0;
+            if (needsSpacer) {
+              for (let i = this.children.length - 1; i >= 0; i--) {
+                const child = this.children[i];
+                if (typeof child.render === "function") {
+                  const childLines = child.render(100);
+                  if (childLines && childLines.length > 0) {
+                    if (childLines[childLines.length - 1].trim() === "") {
+                      needsSpacer = false;
+                    }
+                    break;
+                  }
+                }
+              }
             }
+
+            if (needsSpacer) {
+              if (lastSpacerArgs) {
+                originalAddChild.apply(this, lastSpacerArgs);
+              } else {
+                originalAddChild.call(this, new Spacer(1));
+              }
+            }
+            lastSpacerArgs = null;
 
             return originalAddChild.apply(this, args);
           };
@@ -259,6 +213,32 @@ export default function (pi: ExtensionAPI) {
           return originalAdd.call(this, message, options);
         };
         (InteractiveMode.prototype.addMessageToChat as any).__compactui_patched = true;
+      }
+
+      class CompactThinkingBlock {
+        private markdown: any;
+        constructor(text: string, theme: any) {
+          this.markdown = new Markdown(text, 0, 0, theme);
+        }
+        render(width: number) {
+          // Render markdown with width reduced by 4 (to account for the 4-space prefix)
+          const lines = this.markdown.render(Math.max(1, width - 4));
+          const result = [];
+          for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            // Strip all existing ANSI codes to remove syntax highlighting
+            line = line.replace(/\x1b\[[0-9;]*m/g, "");
+            // Apply normal grey color to the entire line
+            line = `\x1b[38;2;140;140;140m${line}\x1b[39m`;
+            
+            if (i === 0) {
+              result.push(` ⚝  ${line}`);
+            } else {
+              result.push(` │  ${line}`);
+            }
+          }
+          return result;
+        }
       }
 
       // ── Patch AssistantMessageComponent.updateContent ────────────────
@@ -322,39 +302,18 @@ export default function (pi: ExtensionAPI) {
               content.thinking &&
               content.thinking.trim()
             ) {
-              hasThinking = true;
-              let tText = content.thinking.trim();
-              // Record the first sighting of a thinking block in this message.
-              // MUST run outside the `hideThinkingBlock` branch so the WeakMap
-              // entry is created during streaming (when thinking is visible)
-              // and available when `message_end` fires. If we only called this
-              // inside the hide branch, the entry would be created fresh at
-              // rebuild time (Ctrl+T toggle), missing the original start time
-              // and never finding an endMs.
-              recordNativeThinkingStart(message);
-              // Only inject a separator if thinking isn't the first child of
-              // contentContainer. When thinking is first, the proactive
-              // chatContainer spacer above the AssistantMessageComponent is
-              // already the separator from the previous chat line — adding
-              // another line("") here would yield a 2-line gap.
-              if (this.contentContainer.children.length > 0) {
-                this.contentContainer.addChild(line(""));
-              }
-              if (this.hideThinkingBlock) {
-                // Respect Ctrl+T hide toggle: render the duration-aware
-                // hidden label per `docs/plans/thinking.md`. For entries we
-                // never observed (pre-existing sessions / no WeakMap entry),
-                // fall back to `Thought...`. For current entries the label
-                // shows `Thought for Ns` — live during streaming, locked in
-                // after message_end. Color matches the `✻ Worked for Xs`
-                // footer (`assistant-footer.ts`) so both labels look like
-                const label = getNativeThinkingLabel(message, "Thought...");
+              if (!this.hideThinkingBlock) {
+                hasThinking = true;
+                // Only inject a separator if thinking isn't the first child of
+                // contentContainer. When thinking is first, the proactive
+                // chatContainer spacer above the AssistantMessageComponent is
+                // already the separator from the previous chat line — adding
+                // another line("") here would yield a 2-line gap.
+                if (this.contentContainer.children.length > 0) {
+                  this.contentContainer.addChild(line(""));
+                }
                 this.contentContainer.addChild(
-                  new Text(`${DIM_GREY}✻ ${label}\x1b[0m`, 1, 0)
-                );
-              } else {
-                this.contentContainer.addChild(
-                  new ThinkingBlock(tText, 1, 0, undefined, { color: colorThinkingText, italic: true })
+                  new CompactThinkingBlock(content.thinking.trim(), this.markdownTheme)
                 );
               }
             }
@@ -389,7 +348,13 @@ export default function (pi: ExtensionAPI) {
         !ToolExecutionComponent.prototype.render.__compactui_patched
       ) {
         const originalRender = ToolExecutionComponent.prototype.render;
+        // Tools to completely hide from rendering
+        const HIDDEN_TOOLS = new Set(["todo", "grep", "find", "ls"]);
         ToolExecutionComponent.prototype.render = function (width: number) {
+          // Completely hide certain tool calls
+          if (this.toolName && HIDDEN_TOOLS.has(this.toolName)) {
+            return [];
+          }
           const knownTools = ["read", "write", "bash", "edit", "find", "grep", "ls"];
           if (this.toolName && !knownTools.includes(this.toolName)) {
             const dummyTheme = {
@@ -418,24 +383,23 @@ export default function (pi: ExtensionAPI) {
             } else {
               // Expanded view for unknown tools
               const resultLines: string[] = [];
-              const durationS = (this.result?.details?._durationS as number) ?? -1;
               
               if (this.result) {
                 if (this.result.isError) {
-                  // Show expanded error with │ prefix
+                  // Show expanded error with ⎿ prefix
                   const errText = this.result.content?.[0]?.text || "failed";
                   const errLines = errText.split("\n");
-                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, errLines, durationS, 40).render(w));
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, errLines, 40).render(w));
                 } else {
                   // expandedBox includes its own header
                   const fullText = this.result.content?.[0]?.text || "";
                   const lines = fullText.split("\n");
-                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, durationS, 40).render(w));
+                  resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, lines, 40).render(w));
                 }
               } else {
-                // Still running - show running status with │ prefix
+                // Still running - show running status with ⎿ prefix
                 const runningLines = [`${this.toolName} running...`];
-                resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, runningLines, -1, 40).render(w));
+                resultLines.push(...expandedBox(dummyTheme, this.toolName, argsStr, runningLines, 40).render(w));
               }
               
               return resultLines;
@@ -518,86 +482,104 @@ export default function (pi: ExtensionAPI) {
         InteractiveMode.prototype.toggleToolOutputExpansion.__compactui_patched = true;
       }
 
-      // Patch toggleThinkingBlockVisibility
-      const originalToggleThinking =
-        InteractiveMode.prototype.toggleThinkingBlockVisibility;
+
+
+
+      // ── Patch ToolExecutionComponent for path stripping ────────────────
+      // Strip /home/asterxsk/.pi/agent/ prefix from file paths for read/write/edit
+      const PATH_PREFIX = "/home/asterxsk/.pi/agent/";
+      const PATH_TOOLS = new Set(["read", "write", "edit"]);
+      
+      function shortenPath(toolName: string, fullPath: string): string {
+        // Return parent folder/filename for all tools
+        const parts = fullPath.split("/");
+        if (parts.length >= 2) {
+          return parts.slice(-2).join("/");
+        }
+        return fullPath;
+      }
+      
       if (
-        originalToggleThinking &&
-        !InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched
+        ToolExecutionComponent &&
+        ToolExecutionComponent.prototype.updateDisplay &&
+        !(ToolExecutionComponent.prototype.updateDisplay as any).__compactui_path_patched
       ) {
-        InteractiveMode.prototype.toggleThinkingBlockVisibility = function () {
-          const scroll =
-            this.chatContainer &&
-            typeof this.chatContainer.getScroll === "function"
-              ? this.chatContainer.getScroll()
-              : undefined;
-
-          originalToggleThinking.apply(this, arguments);
-
-          if (
-            scroll !== undefined &&
-            this.chatContainer &&
-            typeof this.chatContainer.setScroll === "function"
-          ) {
-            setTimeout(() => {
-              if (
-                this.chatContainer &&
-                typeof this.chatContainer.setScroll === "function"
-              ) {
-                this.chatContainer.setScroll(scroll);
-              }
-              if (
-                this.ui &&
-                typeof this.ui.requestRender === "function"
-              ) {
-                this.ui.requestRender();
-              }
-            }, 10);
+        const origUpdateDisplay = ToolExecutionComponent.prototype.updateDisplay;
+        ToolExecutionComponent.prototype.updateDisplay = function () {
+          // Shorten path for read/write/edit tools in non-expanded view
+          if (PATH_TOOLS.has(this.toolName) && !this.expanded && this.args) {
+            const origPath = this.args.path || this.args.file || this.args.filePath || this.args.source;
+            if (origPath && typeof origPath === "string" && origPath.includes("/")) {
+              // Temporarily modify args for rendering
+              const shortened = shortenPath(this.toolName, origPath);
+              if (this.args.path) this.args.path = shortened;
+              if (this.args.file) this.args.file = shortened;
+              if (this.args.filePath) this.args.filePath = shortened;
+              if (this.args.source) this.args.source = shortened;
+              origUpdateDisplay.call(this);
+              // Restore original args
+              if (this.args.path) this.args.path = origPath;
+              if (this.args.file) this.args.file = origPath;
+              if (this.args.filePath) this.args.filePath = origPath;
+              if (this.args.source) this.args.source = origPath;
+              return;
+            }
           }
+          origUpdateDisplay.call(this);
         };
-        InteractiveMode.prototype.toggleThinkingBlockVisibility.__compactui_patched = true;
+        (ToolExecutionComponent.prototype.updateDisplay as any).__compactui_path_patched = true;
       }
 
-      // Patch cycleThinkingLevel
-      const originalCycleThinking =
-        InteractiveMode.prototype.cycleThinkingLevel;
+      // ── Patch CompactionSummaryMessageComponent ──────────────────
       if (
-        originalCycleThinking &&
-        !InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched
+        CompactionSummaryMessageComponent &&
+        !(CompactionSummaryMessageComponent.prototype as any).__compactui_patched
       ) {
-        InteractiveMode.prototype.cycleThinkingLevel = function () {
-          const scroll =
-            this.chatContainer &&
-            typeof this.chatContainer.getScroll === "function"
-              ? this.chatContainer.getScroll()
-              : undefined;
-
-          originalCycleThinking.apply(this, arguments);
-
-          if (
-            scroll !== undefined &&
-            this.chatContainer &&
-            typeof this.chatContainer.setScroll === "function"
-          ) {
-            setTimeout(() => {
-              if (
-                this.chatContainer &&
-                typeof this.chatContainer.setScroll === "function"
-              ) {
-                this.chatContainer.setScroll(scroll);
-              }
-              if (
-                this.ui &&
-                typeof this.ui.requestRender === "function"
-              ) {
-                this.ui.requestRender();
-              }
-            }, 10);
+        const origUpdateDisplay = CompactionSummaryMessageComponent.prototype.updateDisplay;
+        
+        // Patch updateDisplay for new look
+        CompactionSummaryMessageComponent.prototype.updateDisplay = function () {
+          this.clear();
+          
+          const tokenStr = this.message.tokensBefore.toLocaleString();
+          const hint = DIM_GREY + " (ctrl+o to expand)" + "\x1b[39m";
+          
+          if (this.expanded) {
+            // Use expandedBox for proper wrapping with ⎿ prefix
+            // expandedBox renders its own header, so we don't add a separate Text child
+            const dummyTheme = {
+              fg: (color: string, text: string) => color === "dim" ? `${DIM_GREY}${text}\x1b[39m` : text
+            };
+            const summaryLines = this.message.summary.split("\n");
+            const box = expandedBox(dummyTheme, "compaction", "", summaryLines, 50);
+            this.addChild(box);
+          } else {
+            // Collapsed view with horizontal lines
+            const line = "─".repeat(60);
+            const dimLine = DIM_GREY + line + "\x1b[39m";
+            const content = "  " + "\u273b Compacted from " + tokenStr + " tokens" + hint;
+            this.addChild(new Text(dimLine, 0, 0));
+            this.addChild(new Text(content, 0, 0));
+            this.addChild(new Text(dimLine, 0, 0));
           }
         };
-        InteractiveMode.prototype.cycleThinkingLevel.__compactui_patched = true;
+        
+        // Patch render to remove background (Box adds customMessageBg background)
+        const origRender = CompactionSummaryMessageComponent.prototype.render;
+        CompactionSummaryMessageComponent.prototype.render = function (width: number) {
+          const lines = origRender.call(this, width);
+          // Strip background ANSI codes (48;2;r;g;b or 40-47 range)
+          return lines.map((line: string) => {
+            // Remove 48;2;r;g;b background sequences
+            let cleaned = line.replace(/\x1b\[48;2;\d+;\d+;\d+m/g, "");
+            // Also remove standard background colors (40-47, 100-107)
+            cleaned = cleaned.replace(/\x1b\[(?:4[0-7]|10[0-7])m/g, "");
+            return cleaned;
+          });
+        };
+        
+        (CompactionSummaryMessageComponent.prototype as any).__compactui_patched = true;
       }
-
 
       patchedAssistant = true;
     } catch (e) {
@@ -611,16 +593,6 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {
     if (!KNOWN_TOOLS.has(event.toolName) && !unknownTools.has(event.toolName)) {
       unknownTools.add(event.toolName);
-    }
-  });
-
-  // Finalize the native thinking block duration so the next render of the
-  // hidden thinking label can lock in `✻ Thought for Ns`. Until this fires
-  // the label uses the live elapsed time. See getNativeThinkingLabel().
-  pi.on("message_end", async (event) => {
-    const message = (event as any)?.message;
-    if (message && message.role === "assistant") {
-      recordNativeThinkingEnd(message);
     }
   });
 
@@ -695,7 +667,6 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "read tool output", lineCount, "line");
       }
 
-      const durationS = (details?._durationS as number) ?? -1;
       const filePath = context.args.path ?? "?";
       const offset = (context.args.offset as number) || 1;
       const endLine = offset + lineCount - 1;
@@ -704,10 +675,10 @@ export default function (pi: ExtensionAPI) {
 
       const numberedLines = lines.map((line: string, i: number) => {
         const num = String(offset + i).padStart(4, " ");
-        return `\x1b[97m${num}\x1b[39m  ${line}`;
+        return `${DIM_GREY}${num}\x1b[39m  ${line}`;
       });
 
-      return expandedBox(theme, "read", label, numberedLines, durationS, 40);
+      return expandedBox(theme, "read", label, numberedLines, 40);
     },
   });
 
@@ -742,15 +713,14 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "file written", lineCount, "line");
       }
 
-      const durationS = (details?._durationS as number) ?? -1;
       const filePath = context.args.path ?? "?";
 
       const numberedLines = lines.map((line: string, i: number) => {
         const num = String(i + 1).padStart(4, " ");
-        return `\x1b[97m${num}\x1b[39m  ${line}`;
+        return `${DIM_GREY}${num}\x1b[39m  ${line}`;
       });
 
-      return expandedBox(theme, "write", filePath, numberedLines, durationS, 40);
+      return expandedBox(theme, "write", filePath, numberedLines, 40);
     },
   });
 
@@ -798,31 +768,11 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "file edited", diffLines.length, "line");
       }
 
-      const durationS =
-        ((result.details as Record<string, unknown>)?._durationS as number) ??
-        -1;
-
-      const plainTextLines = [
-        "edit [" + (context.args.path ?? "?") + "]",
-      ];
-      for (const line of diffLines) {
-        plainTextLines.push(line);
-      }
-      if (durationS >= 0) {
-        plainTextLines.push(
-          "Took " + formatDur(durationS) + " [ctrl+o to hide]"
-        );
-      } else {
-        plainTextLines.push("[ctrl+o to hide]");
-      }
-      (result as any)._plainText = plainTextLines.join("\n");
-
       return diffExpandedBox(
         theme,
         "edit",
         context.args.path ?? "",
         diffLines,
-        durationS,
         50
       );
     },
@@ -858,10 +808,9 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
 
-      const durationS = (details?._durationS as number) ?? -1;
       const cmd =
         context.args.command || (details?.command as string) || "";
-      return expandedBox(theme, "bash", cmd, lines, durationS, 40);
+      return expandedBox(theme, "bash", cmd, lines, 40);
     },
   });
 
@@ -895,8 +844,7 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
 
-      const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "ls", context.args.path || ".", lines, durationS, 40);
+      return expandedBox(theme, "ls", context.args.path || ".", lines, 40);
     },
   });
 
@@ -930,8 +878,7 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
 
-      const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, durationS, 40);
+      return expandedBox(theme, "grep", context.args.pattern ?? "?", lines, 40);
     },
   });
 
@@ -969,14 +916,12 @@ export default function (pi: ExtensionAPI) {
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
 
-      const durationS = (details?._durationS as number) ?? -1;
       return expandedBox(
         theme,
         "find",
         (context.args.pattern ?? "?") +
           (context.args.path ? " " + context.args.path : ""),
         lines,
-        durationS,
         40
       );
     },
@@ -1009,6 +954,48 @@ export default function (pi: ExtensionAPI) {
   // ── Initialize UI Features ──────────────────────────────────────────
   initAssistantFooter(pi);
   initPromptUi();
-  initHideThinking(pi);
   initToolStatusDot();
+
+  // ── Patch showStatus: auto-dismiss status notifications after 3s ──
+  // Methods like toggleThinkingBlockVisibility call showStatus() which adds
+  // a one-shot notification line to the chat (e.g. "Thinking blocks: hidden").
+  // We patch it to auto-remove the notification after 3 seconds.
+  if (
+    InteractiveMode &&
+    InteractiveMode.prototype.showStatus &&
+    !(InteractiveMode.prototype.showStatus as any).__compactui_autoDismiss
+  ) {
+    const origShowStatus = InteractiveMode.prototype.showStatus;
+    let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+    InteractiveMode.prototype.showStatus = function (message: string) {
+      origShowStatus.call(this, message);
+
+      if (dismissTimer) {
+        clearTimeout(dismissTimer);
+        dismissTimer = null;
+      }
+
+      dismissTimer = setTimeout(() => {
+        const spacer = (this as any).lastStatusSpacer;
+        const text = (this as any).lastStatusText;
+        if (spacer && text) {
+          (this as any).chatContainer.removeChild(spacer);
+          (this as any).chatContainer.removeChild(text);
+          (this as any).lastStatusSpacer = undefined;
+          (this as any).lastStatusText = undefined;
+          (this as any).ui?.requestRender();
+        }
+        dismissTimer = null;
+      }, 3000);
+    };
+    (InteractiveMode.prototype.showStatus as any).__compactui_autoDismiss = true;
+  }
+
+  // Hide the native "Thought for Ns" label from the TUI since it is now shown in the spinner
+  pi.on("session_start", async (e, ctx) => {
+    if (ctx.mode === "tui") {
+      ctx.ui.setHiddenThinkingLabel("");
+    }
+  });
 }

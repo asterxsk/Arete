@@ -141,9 +141,41 @@ export default function (pi: ExtensionAPI) {
 	let cwd = "";
 	let inputTokens = 0;
 	let outputTokens = 0;
+	let totalCost = 0;
 	let requestRender: (() => void) | undefined;
 	let throttleTimer: ReturnType<typeof setTimeout> | undefined;
 	let throttlePending = false;
+
+	// Pricing per 1M tokens (approximate)
+	function getModelPricing(modelName: string): { input: number; output: number } {
+		const name = modelName.toLowerCase();
+		if (name.includes("opus")) return { input: 15, output: 75 };
+		if (name.includes("sonnet")) return { input: 3, output: 15 };
+		if (name.includes("haiku")) return { input: 0.25, output: 1.25 };
+		if (name.includes("gpt-4o")) return { input: 2.5, output: 10 };
+		if (name.includes("gpt-4-turbo")) return { input: 10, output: 30 };
+		if (name.includes("gpt-4")) return { input: 30, output: 60 };
+		if (name.includes("gpt-3.5")) return { input: 0.5, output: 1.5 };
+		if (name.includes("deepseek")) return { input: 0.14, output: 0.28 };
+		if (name.includes("mimo")) return { input: 0.14, output: 0.28 };
+		if (name.includes("kimi")) return { input: 0.95, output: 4.00 };
+		if (name.includes("glm")) return { input: 1.00, output: 3.20 };
+		if (name.includes("minimax")) return { input: 0.30, output: 1.20 };
+		if (name.includes("qwen")) return { input: 0.50, output: 3.00 };
+		if (name.includes("step")) return { input: 0.20, output: 1.15 };
+		if (name.includes("nemotron")) return { input: 0.60, output: 2.40 };
+		if (name.includes("gemini-2.0-flash")) return { input: 0.1, output: 0.4 };
+		if (name.includes("gemini-2.5-pro")) return { input: 1.25, output: 10 };
+		if (name.includes("gemini")) return { input: 0.075, output: 0.3 };
+		// Unknown model — no cost estimate
+		return { input: 0, output: 0 };
+	}
+
+	function formatCost(cost: number): string {
+		if (cost < 0.01) return "$" + cost.toFixed(3);
+		if (cost < 1) return "$" + cost.toFixed(2);
+		return "$" + cost.toFixed(2);
+	}
 
 	// ── Home-dir shorthand ───────────────────────────────────────────────
 	function shortenPath(p: string): string {
@@ -187,6 +219,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			inputTokens = totalIn;
 			outputTokens = totalOut;
+			// Calculate cost
+			const pricing = getModelPricing(model);
+			totalCost = (totalIn / 1_000_000) * pricing.input + (totalOut / 1_000_000) * pricing.output;
 		} catch { /* ignore */ }
 	}
 
@@ -233,10 +268,13 @@ export default function (pi: ExtensionAPI) {
 						? "  " + paint(C.red, "\uf06a") + " " + paint(WHITE, "compact!")
 						: "";
 
-					// ── Token counts ────────────────────────────────
+					// ── Cost + Token counts ────────────────────────────
 					let tokenPart = "";
+					if (totalCost > 0) {
+						tokenPart = paint(C.orange, formatCost(totalCost)) + " ";
+					}
 					if (inputTokens > 0 || outputTokens > 0) {
-						tokenPart = paint(WHITE, "\u2191" + formatTokens(inputTokens))
+						tokenPart += paint(WHITE, "\u2191" + formatTokens(inputTokens))
 							+ " " + paint(WHITE, "\u2193" + formatTokens(outputTokens));
 					}
 

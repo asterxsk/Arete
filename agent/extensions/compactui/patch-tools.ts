@@ -10,7 +10,7 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import {
   line, noOp, orange, compactCall, compactSummary, compactFailed,
-  formatDur, expandedBox, INDENT, HINT, DIM_GREY,
+  expandedBox, INDENT, HINT, DIM_GREY,
 } from "./rendering.js";
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -46,12 +46,44 @@ class CustomBlock {
 // ── patchTool ──────────────────────────────────────────────────────────
 
 export function patchTool(tool: any): void {
-  const EXCLUDED_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "grep", "find"]);
+  const EXCLUDED_TOOLS = new Set(["bash", "ls", "grep", "find", "subagent"]);
   if (EXCLUDED_TOOLS.has(tool.name)) return;
   
   // Skip tools that already have custom rendering from their own extensions
   // (e.g., subagent with CompactToolBox, powershell with its own renderer)
   if (tool.renderShell === "self" && tool.renderResult && !tool.__compactui_patched) return;
+
+  // ── Path Stripping Helper ─────────────────────────────────────────────
+  // Strip /home/asterxsk/.pi/agent/ prefix from file paths
+  const PATH_PREFIX = "/home/asterxsk/.pi/agent/";
+  function stripPath(path: string): string {
+    if (path && path.startsWith(PATH_PREFIX)) {
+      return path.slice(PATH_PREFIX.length);
+    }
+    return path;
+  }
+
+  // ── Read / Write / Edit (path stripping) ──────────────────────────────
+  if (tool.name === "read" || tool.name === "write" || tool.name === "edit") {
+    if (tool.__compactui_patched) return;
+    tool.__compactui_patched = true;
+    tool.renderShell = "self";
+    tool.renderCall = (args: any, theme: any, context: any) => {
+      if (context.expanded) return noOp();
+      const filePath = args.path || args.file || "?";
+      return line(INDENT + orange(theme, tool.name) + " [" + stripPath(filePath) + "]" + DIM_GREY + HINT + "\x1b[39m");
+    };
+    tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
+      if (result.isError) return compactFailed(theme);
+      if (!opts.expanded) return noOp();
+      // For expanded view, show the full path
+      const filePath = context.args.path || context.args.file || "?";
+      const full = (result.details as any)?._fullOutput || result.content?.[0]?.text || "";
+      const lines = full.split("\n");
+      return expandedBox(theme, tool.name, filePath, lines, 40);
+    };
+    return;
+  }
 
   // ── Ask Question ───────────────────────────────────────────────────────
   if (tool.name === "ask_question" || tool.name === "ask_questions" || tool.name === "questions" || tool.name === "question") {
@@ -66,21 +98,43 @@ export function patchTool(tool: any): void {
     };
     tool.renderResult = (result: any, opts: any, theme: any, context: any) => {
       if (result.isError) return compactFailed(theme);
-      let count = 1;
-      if (context?.args && Array.isArray(context.args.questions)) {
-        count = context.args.questions.length;
-      }
-
+      
+      const details = result.details as any;
+      const questions = details?.questions || [];
+      const answers = details?.answers || [];
+      const cancelled = details?.cancelled || false;
+      
       if (!opts.expanded) {
+        if (cancelled) {
+          return line(INDENT + DIM_GREY + `\u23bf cancelled` + "\x1b[39m");
+        }
+        const count = answers.length;
         return line(INDENT + DIM_GREY + `\u23bf answered ${count} question${count === 1 ? '' : 's'}` + "\x1b[39m");
       } else {
         const res: string[] = [];
-        res.push(INDENT + orange(theme, tool.name) + " [questions]");
-        const text = result.content?.[0]?.text || "";
-        for (const l of text.split('\n')) {
-          if (l.trim()) res.push(INDENT + "  " + DIM_GREY + "\u2502 \x1b[39m" + l);
+        const bullet = '\u25cf ';
+        res.push(INDENT + "  " + bullet + 'User answered ' + tool.name + ':');
+        
+        // Build question-answer pairs
+        for (let i = 0; i < questions.length; i++) {
+          const q = questions[i];
+          const answer = answers[i];
+          const questionText = q.prompt || q.label || '?';
+          let answerText = 'no answer';
+          if (answer) {
+            if (answer.source === 'custom') {
+              answerText = answer.value || 'custom';
+            } else if (answer.label) {
+              answerText = answer.label;
+            } else if (typeof answer.optionIndex === 'number') {
+              answerText = String(answer.optionIndex + 1);
+            }
+          }
+          const prefix = i === 0 ? "\u23bf  " : "   "; // ⎿ with 2 spaces to align with 3-space indent
+          const lineText = `${questionText} \u2192 ${answerText}`;
+          res.push(INDENT + "  " + DIM_GREY + prefix + "\x1b[39m" + "\u00b7 " + lineText);
         }
-        res.push(INDENT + "  " + DIM_GREY + "\u2514 \x1b[39m" + DIM_GREY + "Took 0.2s [ctrl+o to hide]\x1b[39m");
+        
         return new CustomBlock(res) as any;
       }
     };
@@ -104,21 +158,8 @@ export function patchTool(tool: any): void {
         if (result.isError) return compactFailed(theme);
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
-      const durationS = (details?._durationS as number) ?? -1;
 
-      const plainTextLines = ["powershell [" + (context.args.command ?? "?") + "]"];
-      for (const line of lines) {
-        plainTextLines.push(line.startsWith("\u2502") ? " " + line : line);
-      }
-      if (durationS >= 0) {
-        plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
-      } else {
-        plainTextLines.push("[ctrl+o to hide]");
-      }
-      (result as any)._plainText = plainTextLines.join("\n");
-
-      const processedLines = lines.map((line: string) => line.startsWith("\u2502") ? " " + line : line);
-      return expandedBox(theme, "powershell", context.args.command ?? "", processedLines, durationS, 40);
+      return expandedBox(theme, "powershell", context.args.command ?? "", lines, 40);
     };
     return;
   }
@@ -140,8 +181,7 @@ export function patchTool(tool: any): void {
         if (result.isError) return compactFailed(theme);
         return compactSummary(theme, "read terminal output", lines.length, "line");
       }
-      const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "run_command", context.args.CommandLine ?? "", lines, durationS, 40);
+      return expandedBox(theme, "run_command", context.args.CommandLine ?? "", lines, 40);
     };
     return;
   }
@@ -163,8 +203,7 @@ export function patchTool(tool: any): void {
         if (result.isError) return compactFailed(theme);
         return compactSummary(theme, "read search results", lines.length, "line");
       }
-      const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "web_search", context.args.query ?? "", lines, durationS, 40);
+      return expandedBox(theme, "web_search", context.args.query ?? "", lines, 40);
     };
     return;
   }
@@ -186,8 +225,7 @@ export function patchTool(tool: any): void {
         if (result.isError) return compactFailed(theme);
         return compactSummary(theme, "read web page", lines.length, "line");
       }
-      const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, tool.name, context.args.url ?? "", lines, durationS, 40);
+      return expandedBox(theme, tool.name, context.args.url ?? "", lines, 40);
     };
     return;
   }
@@ -210,8 +248,7 @@ export function patchTool(tool: any): void {
         return compactSummary(theme, "checked tasks", taskCount, "task");
       }
       const lines = full.split("\n");
-      const durationS = (details?._durationS as number) ?? -1;
-      return expandedBox(theme, "manage_task", `${context.args.Action} ${context.args.TaskId || ""}`.trim(), lines, durationS, 40);
+      return expandedBox(theme, "manage_task", `${context.args.Action} ${context.args.TaskId || ""}`.trim(), lines, 40);
     };
     return;
   }
@@ -237,11 +274,10 @@ export function patchTool(tool: any): void {
         return compactSummary(theme, "scheduled tasks", taskCount, "task");
       }
       const lines = full.split("\n");
-      const durationS = (details?._durationS as number) ?? -1;
       let argsLine = "";
       if (context.args.DurationSeconds) argsLine = `${context.args.DurationSeconds}s "${context.args.Prompt}"`;
       else if (context.args.CronExpression) argsLine = `cron "${context.args.CronExpression}" "${context.args.Prompt}"`;
-      return expandedBox(theme, "schedule", argsLine, lines, durationS, 40);
+      return expandedBox(theme, "schedule", argsLine, lines, 40);
     };
     return;
   }
@@ -269,8 +305,7 @@ export function patchTool(tool: any): void {
     const content = result.content?.[0];
     const text = content?.type === "text" ? content.text : "";
     const lines = text.split("\n").filter((l: string) => l.trim());
-    const durationS = (result.details as any)?._durationS ?? 0.0;
 
-    return expandedBox(theme, tool.name, argsLine, lines, durationS, 40);
+    return expandedBox(theme, tool.name, argsLine, lines, 40);
   };
 }

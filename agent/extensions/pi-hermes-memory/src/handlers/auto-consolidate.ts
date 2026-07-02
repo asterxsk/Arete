@@ -122,15 +122,7 @@ export function registerConsolidateCommand(
         });
       }
 
-      try {
-        ctx.ui.notify(
-          `Starting memory consolidation for ${targets.length} target${targets.length === 1 ? "" : "s"}...`,
-          "info",
-        );
-      } catch {
-        // Best-effort only. If the command context is already stale, continue
-        // with the consolidation work rather than failing before it starts.
-      }
+      // Notifications suppressed — consolidation runs silently.
 
       for (const item of targets) {
         const entries = entriesForTarget(item.store, item.target);
@@ -140,14 +132,7 @@ export function registerConsolidateCommand(
           continue;
         }
 
-        try {
-          ctx.ui.notify(
-            `Consolidating ${item.label}...`,
-            "info",
-          );
-        } catch {
-          // Best-effort progress feedback only.
-        }
+        // Notification suppressed.
 
         const result = await triggerConsolidation(
           pi,
@@ -169,14 +154,7 @@ export function registerConsolidateCommand(
 
       const summary = `\n  Memory Consolidation\n  ${"─".repeat(30)}\n${results.map((r) => `  ${r}`).join("\n")}`;
 
-      try {
-        ctx.ui.notify(summary, "info");
-      } catch {
-        // Child consolidation can indirectly trigger a runtime reload/session
-        // replacement. If that happens, the original command ctx is stale by
-        // the time we reach the final summary, so the command should exit
-        // quietly instead of surfacing a stale-ctx error.
-      }
+      // Notification suppressed — consolidation summary logged silently.
     },
   });
 }

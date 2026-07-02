@@ -64,19 +64,15 @@ export function compactFailed(theme: any): Component {
   return line(INDENT + DIM_GREY + "\u23bf failed tool call" + "\x1b[39m");
 }
 
-export function formatDur(s: number): string {
-  if (s < 0.01) return "0.0s";
-  if (s < 60) return s.toFixed(1) + "s";
-  return Math.floor(s / 60) + "m " + Math.floor(s % 60) + "s";
-}
+
 
 // ── Wrap with Prefix (for expanded box lines) ──────────────────────────
 
 export function wrapWithPrefix(rl: string, width: number): string[] {
   const visible = rl.replace(/\x1b\[[0-9;]*m/g, "");
-  // Match prefix: leading spaces + │ or └ + trailing spaces
-  // This handles formats like " │ " or "└ " or just "│ "
-  const match = visible.match(/^(\s*[\u2502\u2514]\s*)/);
+  // Match prefix: leading spaces + ⎿ (U+23BF) or │ or └ + trailing spaces
+  // This handles formats like " ⎿ " or " │ " or "└ " or just "│ "
+  const match = visible.match(/^(\s*[\u23BF\u2502\u2514]\s*)/);
   if (!match || match[1].length === 0) return wrapTextWithAnsi(rl, width);
 
   const prefixLen = match[1].length;
@@ -106,37 +102,32 @@ export function wrapWithPrefix(rl: string, width: number): string[] {
   if (wrappedContent.length === 0) return [ansiPrefix];
 
   const result = [ansiPrefix + wrappedContent[0]];
-  // Subsequent lines preserve the exact same prefix
-  const subsequentPrefixStr = match[1];
+  // Subsequent lines use spaces instead of ⎿/│/└ prefix
+  // Replace the box-drawing character with spaces to match expandedBox format
+  const subsequentPrefix = match[1].replace(/[\u23BF\u2502\u2514]/g, " ");
   for (let j = 1; j < wrappedContent.length; j++) {
-    result.push(subsequentPrefixStr + wrappedContent[j]);
+    result.push(subsequentPrefix + wrappedContent[j]);
   }
   return result;
 }
 
 // ── Expanded Box ───────────────────────────────────────────────────────
 
-export function expandedBox(theme: any, headerName: string, argsLine: string, lines: string[], durationS: number, limit: number): Component {
+export function expandedBox(theme: any, headerName: string, argsLine: string, lines: string[], limit: number): Component {
   const show = lines.slice(0, limit);
   const hasMore = lines.length > limit;
   const raw: string[] = [];
 
-  // Output lines with \u2502 prefix aligned under [
-  const padding = " ".repeat(headerName.length + 1);
-  const CONTENT_INDENT = padding + "\u2502 ";
-  for (const line of show) {
-    raw.push(INDENT + CONTENT_INDENT + theme.fg("text", line));
+  // Output lines: ⎿ on first line, spaces on following lines
+  // No padding - header is also at position 0
+  for (let i = 0; i < show.length; i++) {
+    // ⎿ is 1 char, space + ⎿ + 2 spaces = 4 chars total, same as 3 spaces on subsequent lines
+    const prefix = i === 0 ? " \u23bf  " : "   "; // space + ⎿ + 2 spaces, subsequent lines 3 spaces
+    raw.push(prefix + theme.fg("text", show[i]));
   }
 
   if (hasMore) {
-    raw.push(INDENT + CONTENT_INDENT + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
-  }
-
-  // Footer with duration
-  if (durationS >= 0) {
-    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "Took " + formatDur(durationS) + " [ctrl+o to hide]\x1b[39m");
-  } else {
-    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "[ctrl+o to hide]\x1b[39m");
+    raw.push("  " + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
   }
 
   // Store plain text version for copy/paste
@@ -147,16 +138,12 @@ export function expandedBox(theme: any, headerName: string, argsLine: string, li
   if (hasMore) {
     plainTextLines.push("... " + (lines.length - limit) + " more");
   }
-  if (durationS >= 0) {
-    plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
-  } else {
-    plainTextLines.push("[ctrl+o to hide]");
-  }
-
-  (raw as any)._plainText = plainTextLines.join("\n");
 
   class GenericComponent {
-    constructor(private renderFn: (width: number) => string[]) {}
+    _plainText: string;
+    constructor(private renderFn: (width: number) => string[], plainText: string) {
+      this._plainText = plainText;
+    }
     render(width: number): string[] {
       try { return this.renderFn(width); } catch (e: any) { return [`\x1b[31mError rendering: ${e.message}\x1b[39m`]; }
     }
@@ -172,7 +159,10 @@ export function expandedBox(theme: any, headerName: string, argsLine: string, li
 
       const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
       const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
-      if (wrappedArgs.length === 0) {
+      if (cleanArgsLine.length === 0) {
+        // No args - just show header without brackets or INDENT
+        result.push(truncateToWidth(orange(theme, headerName), width));
+      } else if (wrappedArgs.length === 0) {
         result.push(truncateToWidth(headerPrefix + "]", width));
       } else {
         for (let i = 0; i < wrappedArgs.length; i++) {
@@ -193,7 +183,7 @@ export function expandedBox(theme: any, headerName: string, argsLine: string, li
         else result.push(...wrapWithPrefix(rl, width));
       }
       return result;
-  });
+  }, plainTextLines.join("\n"));
 }
 
 // ── Diff Coloring ──────────────────────────────────────────────────────
@@ -207,39 +197,33 @@ export function colorizeDiffLine(theme: any, line: string): string {
 
     if (sign === '+') {
       const greenText = "\x1b[38;2;120;220;120m";
-      return `\x1b[97m${num} ${greenText}+${rest}\x1b[39m`;
+      return `${DIM_GREY}${num}\x1b[39m ${greenText}+${rest}\x1b[39m`;
     }
     if (sign === '-') {
       const redText = "\x1b[38;2;220;120;120m";
-      return `\x1b[97m${num} ${redText}-${rest}\x1b[39m`;
+      return `${DIM_GREY}${num}\x1b[39m ${redText}-${rest}\x1b[39m`;
     }
-    return `\x1b[97m${num}   \x1b[39m${rest}`;
+    return `${DIM_GREY}${num}\x1b[39m   ${rest}`;
   }
 
   return theme.fg("text", line);
 }
 
-export function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines: string[], durationS: number, limit: number): Component {
+export function diffExpandedBox(theme: any, headerName: string, argsLine: string, lines: string[], limit: number): Component {
   const show = lines.slice(0, limit);
   const hasMore = lines.length > limit;
   const raw: string[] = [];
 
-  // Diff lines with \u2502 prefix, colored by +/-
-  const padding = " ".repeat(headerName.length + 1);
-  const CONTENT_INDENT = padding + "\u2502 ";
-  for (const dl of show) {
-    raw.push(INDENT + CONTENT_INDENT + colorizeDiffLine(theme, dl));
+  // Diff lines: ⎿ on first line, spaces on following lines, colored by +/-
+  // No padding - header is also at position 0
+  for (let i = 0; i < show.length; i++) {
+    // ⎿ is 1 char, space + ⎿ + 2 spaces = 4 chars total, same as 3 spaces on subsequent lines
+    const prefix = i === 0 ? " \u23bf  " : "   "; // space + ⎿ + 2 spaces, subsequent lines 3 spaces
+    raw.push(prefix + colorizeDiffLine(theme, show[i]));
   }
 
   if (hasMore) {
-    raw.push(INDENT + CONTENT_INDENT + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
-  }
-
-  // Footer with duration
-  if (durationS >= 0) {
-    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "Took " + formatDur(durationS) + " [ctrl+o to hide]\x1b[39m");
-  } else {
-    raw.push(INDENT + padding + "\u2514 " + DIM_GREY + "[ctrl+o to hide]\x1b[39m");
+    raw.push("  " + DIM_GREY + "... " + (lines.length - limit) + " more\x1b[39m");
   }
 
   // Store plain text version for copy/paste
@@ -250,16 +234,12 @@ export function diffExpandedBox(theme: any, headerName: string, argsLine: string
   if (hasMore) {
     plainTextLines.push("... " + (lines.length - limit) + " more");
   }
-  if (durationS >= 0) {
-    plainTextLines.push("Took " + formatDur(durationS) + " [ctrl+o to hide]");
-  } else {
-    plainTextLines.push("[ctrl+o to hide]");
-  }
-
-  (raw as any)._plainText = plainTextLines.join("\n");
 
   class GenericComponent {
-    constructor(private renderFn: (width: number) => string[]) {}
+    _plainText: string;
+    constructor(private renderFn: (width: number) => string[], plainText: string) {
+      this._plainText = plainText;
+    }
     render(width: number): string[] {
       try { return this.renderFn(width); } catch (e: any) { return [`\x1b[31mError rendering: ${e.message}\x1b[39m`]; }
     }
@@ -275,7 +255,10 @@ export function diffExpandedBox(theme: any, headerName: string, argsLine: string
 
       const cleanArgsLine = argsLine.replace(/\r/g, "").replace(/^\n+/, "");
       const wrappedArgs = wrapTextWithAnsi(cleanArgsLine, argsWidth);
-      if (wrappedArgs.length === 0) {
+      if (cleanArgsLine.length === 0) {
+        // No args - just show header without brackets or INDENT
+        result.push(truncateToWidth(orange(theme, headerName), width));
+      } else if (wrappedArgs.length === 0) {
         result.push(truncateToWidth(headerPrefix + "]", width));
       } else {
         for (let i = 0; i < wrappedArgs.length; i++) {
@@ -295,7 +278,7 @@ export function diffExpandedBox(theme: any, headerName: string, argsLine: string
         else result.push(...wrapWithPrefix(rl, width));
       }
       return result;
-  });
+  }, plainTextLines.join("\n"));
 }
 
 // ── Capture Result ─────────────────────────────────────────────────────

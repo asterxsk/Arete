@@ -209,9 +209,7 @@ export function setupCorrectionDetector(
 
       if (result.code === 0 && result.stdout) {
         const output = result.stdout.trim();
-        if (output && !output.toLowerCase().includes("nothing to save")) {
-          ctx.ui.notify("Correction detected — memory updated", "info");
-        }
+        // Notification suppressed — correction detection runs silently.
       }
 
       // Also save as a failure memory for learning

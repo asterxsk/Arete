@@ -41,8 +41,8 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - New extensions should appear in the system prompt under `## Loaded Extensions` if properly registered.
 
 ## Child DOX Index
-- `agentzero/` — `/init` command and global AGENTS.md injection into system prompt
-- `compactui/` — Compact tool rendering, responsive wrapping, assistant time tracking footer, tagged thinking dimming, and tool status dot.
+- `agentzero/` — `/init` command (create or audit AGENTS.md) and global AGENTS.md injection into system prompt
+- `compactui/` — Compact tool rendering, responsive wrapping, assistant time tracking footer, tagged thinking dimming, tool status dot, and auto-hide notifications (3s).
 - `context/` — `/context` overlay: token grid breakdown with per-category color-coded visualization
 - `ferment/` — Structured delivery framework (scope, phases, steps) for long-running agent tasks
 - `filechanges/` — `/filechanges` overlay + accept/decline; tracks file modifications per session and exposes counts for the statusline
@@ -54,9 +54,9 @@ Each subfolder is a self-contained pi extension. Pi auto-loads any `extensions/<
 - `powershell/` — `powershell` tool (LLM-callable) with compactui-style rendering
 - `profile-switcher/` — `/profile` command — multi-account auth switching with OAuth and API key profiles
 - `questions/` — `questions` tool (multi-choice TUI with optional custom-answer fallback and ASCII sketches)
-- `spinner-phrases/` — Animated star spinner with orange glow effect and fun Claude Code-style phrases
+- `spinner/` — Animated star spinner with theme-aware accent color, glow effect, and fun phrases
 - `statusline/` — Footer status line (left to right): provider, model, context bar, file changes counts; auto-refreshes
-- `subagents/` — the `subagent` tool + `/sub` command: spawn isolated pi processes with predefined agent .md files; duration hidden while running
+- `subagents/` — the `subagent` tool + `/sub` and `/jobs` commands: spawn isolated pi processes with predefined agent .md files. Runs in the BACKGROUND — returns a job id immediately and pings the agent with a follow-up message when the job finishes
 - `tasks/` — `/manage_task` command — background terminal task runner with output capture, wait, cancel; persists across sessions
 - `timers/` — `/schedule` command — one-shot and repeating timers with notifications, auto-delete on fire, and overlay browser
 - `todo/` — `todo` tool + `/todos` command — structured task list with status tracking, categories, reminders, and persistent overlay widget

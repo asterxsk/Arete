@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { parseFrontmatter, truncateHead, withFileMutationQueue, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Input, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
@@ -150,6 +150,12 @@ const AGENTS_DIR = path.join(EXT_DIR, "agents");
 const TOOLS_DIR = path.join(EXT_DIR, "tools");
 const CONFIG_PATH = path.join(EXT_DIR, "config.json");
 const DEFAULT_MAX_CONCURRENCY = 4;
+
+// Set from config in the default export; gates concurrent background child processes.
+let maxConcurrency = DEFAULT_MAX_CONCURRENCY;
+
+// Captured in the default export so detached background jobs can ping the agent.
+let piApi: ExtensionAPI | null = null;
 
 function loadConfig(): ExtensionConfig {
 	try {
@@ -608,6 +614,175 @@ async function mapConcurrent<T, R>(
 	return results;
 }
 
+// ── Background Job Registry ────────────────────────────────────────────
+// Subagent tool calls are always launched as detached background jobs. The
+// tool returns immediately with an acknowledgment; when a job (or a batch of
+// parallel jobs) finishes, the agent is pinged via a follow-up user message
+// carrying the full output. Modeled on the tasks extension.
+
+type JobStatus = "running" | "completed" | "failed";
+
+interface SubagentJob {
+	id: number;
+	batchId: number;
+	agent: string;
+	task: string;
+	status: JobStatus;
+	startedAt: number;
+	completedAt?: number;
+	controller: AbortController;
+	result?: AgentResult;
+}
+
+let jobs: SubagentJob[] = [];
+let jobCounter = 0;
+let batchCounter = 0;
+const MAX_JOBS_KEPT = 100;
+
+// pi core reads __pi_subagent_running_count to know work is in flight; keep it
+// accurate across the detached job lifecycle (increment at launch, decrement
+// at true completion — NOT when the tool call returns).
+function incRunningCount(): void {
+	(globalThis as any).__pi_subagent_running_count = ((globalThis as any).__pi_subagent_running_count ?? 0) + 1;
+}
+function decRunningCount(): void {
+	(globalThis as any).__pi_subagent_running_count = Math.max(0, ((globalThis as any).__pi_subagent_running_count ?? 1) - 1);
+}
+
+// Global concurrency gate shared across all background jobs.
+let activeSlots = 0;
+const slotWaiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+	if (activeSlots < maxConcurrency) {
+		activeSlots++;
+		return Promise.resolve();
+	}
+	return new Promise<void>((resolve) => slotWaiters.push(resolve));
+}
+
+function releaseSlot(): void {
+	const next = slotWaiters.shift();
+	if (next) {
+		// Hand the occupied slot directly to the next waiter.
+		next();
+	} else {
+		activeSlots = Math.max(0, activeSlots - 1);
+	}
+}
+
+function trimJobs(): void {
+	const finished = jobs.filter((j) => j.status !== "running");
+	if (finished.length > MAX_JOBS_KEPT) {
+		const excess = finished.length - MAX_JOBS_KEPT;
+		const toRemove = new Set(finished.slice(0, excess).map((j) => j.id));
+		jobs = jobs.filter((j) => !toRemove.has(j.id));
+	}
+}
+
+function buildJobOutput(job: SubagentJob): string {
+	const icon = job.status === "completed" ? "✅" : "❌";
+	const header = `${icon} Subagent job #${job.id} (${job.agent})`;
+	const body = job.result?.output || (job.status === "failed" ? "(failed — no output)" : "(no output)");
+	return `${header}\n\n${body}`;
+}
+
+// Sent once per batch, when the LAST job in the batch finishes.
+function sendBatchPing(batchJobs: SubagentJob[], hasUI: boolean, ctx: ExtensionContext): void {
+	const ids = batchJobs.map((j) => `#${j.id}`).join(", ");
+	const ok = batchJobs.filter((j) => j.status === "completed").length;
+	const summary =
+		batchJobs.length === 1
+			? `Background subagent job ${ids} (${batchJobs[0].agent}) finished.`
+			: `${batchJobs.length} background subagent jobs (${ids}) finished — ${ok}/${batchJobs.length} succeeded.`;
+	const msg = `${summary}\n\n${batchJobs.map(buildJobOutput).join("\n\n---\n\n")}`;
+
+	if (piApi?.sendUserMessage) {
+		try {
+			const res = piApi.sendUserMessage(msg, { deliverAs: "followUp" }) as unknown;
+			if (res && typeof (res as Promise<void>).then === "function") {
+				(res as Promise<void>).catch(() => {});
+			}
+		} catch {}
+	}
+
+	if (hasUI) {
+		try {
+			ctx.ui.notify?.(`Subagent ${ok}/${batchJobs.length} job(s) finished (${ids})`, ok === batchJobs.length ? "info" : "warning");
+		} catch {}
+	}
+}
+
+// Launch a batch of jobs detached. Returns the job records immediately.
+function launchBatch(
+	entries: { agent: AgentConfig; task: string; cwd: string }[],
+	model: string,
+	hasUI: boolean,
+	ctx: ExtensionContext,
+): SubagentJob[] {
+	const batchId = ++batchCounter;
+	const batchJobs: SubagentJob[] = entries.map((e) => {
+		const job: SubagentJob = {
+			id: ++jobCounter,
+			batchId,
+			agent: e.agent.name,
+			task: e.task,
+			status: "running",
+			startedAt: Date.now(),
+			controller: new AbortController(),
+		};
+		jobs.push(job);
+		incRunningCount();
+		return job;
+	});
+
+	let remaining = batchJobs.length;
+
+	batchJobs.forEach((job, idx) => {
+		const entry = entries[idx];
+		void (async () => {
+			await acquireSlot();
+			try {
+				const result = await runSubagent(entry.agent, entry.task, entry.cwd, model, job.controller.signal);
+				job.result = result;
+				job.status = result.exitCode === 0 && !result.progress.error ? "completed" : "failed";
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				job.status = "failed";
+				job.result = {
+					agent: job.agent,
+					task: job.task,
+					output: `Error: ${message}`,
+					exitCode: 1,
+					model,
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+					progress: {
+						agent: job.agent,
+						status: "failed",
+						task: job.task,
+						recentTools: [],
+						toolCount: 0,
+						tokens: 0,
+						durationMs: Date.now() - job.startedAt,
+						lastMessage: "",
+						error: message,
+					},
+				};
+			} finally {
+				job.completedAt = Date.now();
+				releaseSlot();
+				decRunningCount();
+			}
+
+			remaining--;
+			if (remaining === 0) sendBatchPing(batchJobs, hasUI, ctx);
+		})();
+	});
+
+	trimJobs();
+	return batchJobs;
+}
+
 // ── Load known models for autocomplete suggestions ───────────────────
 // Merge enabledModels (settings.json) + all provider models (models.json).
 // This is best-effort — user can still type any model name.
@@ -820,17 +995,29 @@ class SubagentAutocompleteComponent {
 // ── Extension ─────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	// Capture the API so detached background jobs can ping the agent on completion.
+	piApi = pi;
+
 	// Self-register in global feature registry
 	(globalThis as any).__pi_extension_features?.push({
 		name: "subagents",
-		description: "Run isolated child pi processes with predefined agents or custom agent .md files",
+		description: "Run isolated child pi processes in the background; results are delivered as a follow-up message when each finishes",
 		tools: ["subagent"],
-		commands: ["/sub"],
+		commands: ["/sub", "/jobs"],
 	});
 
 	const config = loadConfig();
-	const maxConcurrency = config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
+	maxConcurrency = config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
 	agents = loadAgents();
+
+	// Kill any in-flight background jobs when the session shuts down.
+	pi.on("session_shutdown", () => {
+		for (const j of jobs) {
+			if (j.status === "running") {
+				try { j.controller.abort(); } catch {}
+			}
+		}
+	});
 
 	// ── Command: /sub ────────────────────────────────
 	pi.registerCommand("sub", {
@@ -883,16 +1070,55 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── Command: /jobs ───────────────────────────────
+	// List background subagent jobs, or `/jobs <id>` to show one job's output.
+	pi.registerCommand("jobs", {
+		description: "List background subagent jobs and their status. /jobs <id> shows a job's full output.",
+		handler: async (_args, ctx) => {
+			const arg = (typeof _args === "string" ? _args : "").trim().replace(/^#/, "");
+
+			if (arg) {
+				const id = parseInt(arg, 10);
+				const job = Number.isNaN(id) ? undefined : jobs.find((j) => j.id === id);
+				if (!job) {
+					ctx.ui.notify?.(`No subagent job #${arg}.`, "warning");
+					return;
+				}
+				const dur = formatDuration((job.completedAt ?? Date.now()) - job.startedAt);
+				const out = job.result?.output || (job.status === "running" ? "(still running…)" : "(no output)");
+				ctx.ui.notify?.(`#${job.id} ${job.agent} [${job.status}] · ${dur}\n\n${out.slice(0, 4000)}`, "info");
+				return;
+			}
+
+			if (jobs.length === 0) {
+				ctx.ui.notify?.("No subagent jobs yet.", "info");
+				return;
+			}
+
+			const running = jobs.filter((j) => j.status === "running").length;
+			const lines = jobs.slice(-20).map((j) => {
+				const icon = j.status === "completed" ? "✓" : j.status === "failed" ? "✗" : "⟳";
+				const dur = formatDuration((j.completedAt ?? Date.now()) - j.startedAt);
+				const task = j.task.replace(/\s+/g, " ").slice(0, 50);
+				return `${icon} #${j.id} ${j.agent} [${j.status}] · ${dur} — ${task}`;
+			});
+			const head = `Subagent jobs (${running} running, ${jobs.length} total) — /jobs <id> for full output`;
+			ctx.ui.notify?.(`${head}\n${lines.join("\n")}`, "info");
+		},
+	});
+
 	// ── Tool: subagent ─────────────────────────────
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
 		description:
-			"Run a subagent to complete a task. Subagents have NO context from the current conversation — include all necessary context in the task description. " +
+			"Launch a subagent to complete a task IN THE BACKGROUND. The call returns immediately with a job id; the subagent's full output arrives later as a follow-up message when it finishes. Do NOT wait or poll for it — continue with other work. " +
+			"Subagents have NO context from the current conversation — include all necessary context in the task description. " +
 			"The model for subagents is set via the /sub command — the agent cannot override it.",
-		promptSnippet: "Run subagents for delegated tasks",
+		promptSnippet: "Delegate tasks to background subagents",
 		promptGuidelines: [
-			"When you have 2+ independent subagent tasks, ALWAYS use parallel mode with a SINGLE subagent call (tasks: [...]), never multiple separate subagent calls. Multiple separate tool calls creates massive UI clutter.",
+			"Subagents run in the BACKGROUND: the tool returns a job id right away and you are pinged with the full output via a follow-up message when the job finishes. Never wait or poll — launch the job, then keep working. Use /jobs to inspect status.",
+			"When you have 2+ independent subagent tasks, ALWAYS use parallel mode with a SINGLE subagent call (tasks: [...]), never multiple separate subagent calls. A parallel batch delivers one consolidated follow-up message when all jobs finish.",
 			"Parallel tool calls are your primary parallelism mechanism — put multiple independent read/fetch/search calls in one function_calls block. Don't use subagents to parallelize simple I/O.",
 			"Use subagent to delegate *reasoning and decisions*: codebase exploration (scout), web research (researcher), or isolated code changes (worker)",
 			"Subagents have NO context from the current conversation — include ALL necessary context in the task description",
@@ -918,121 +1144,37 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			try {
 			const cwd = ctx.cwd;
 			const parentModel = ctx.model ? `${(ctx.model as any).provider}/${ctx.model.id}` : undefined;
 			const resolvedModel = resolveSubagentModel(parentModel);
+			const available = agents.map((a) => a.name).join(", ") || "none";
 
-			// Validate mode
+			// Build the batch of {agent, task, cwd} entries from either mode.
+			let entries: { agent: AgentConfig; task: string; cwd: string }[];
 			if (params.tasks && params.tasks.length > 0) {
-				// ── Parallel mode ──
-				const taskList = params.tasks;
-
-				// Validate all agents
-				const available = agents.map((a) => a.name).join(", ") || "none";
-				for (const t of taskList) {
-					if (!agents.find((a) => a.name === t.agent)) {
-						throw new Error(`Unknown agent: ${t.agent}. Available agents: ${available}`);
-					}
-				}
-
-				const allResults: AgentResult[] = [];
-
-				// Initialize all result slots as pending
-				for (let i = 0; i < taskList.length; i++) {
-					allResults[i] = {
-						agent: taskList[i].agent,
-						task: taskList[i].task,
-						output: "",
-						exitCode: -1,
-						model: undefined,
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-						progress: { agent: taskList[i].agent, status: "pending" as any, task: taskList[i].task, recentTools: [], toolCount: 0, tokens: 0, durationMs: 0, lastMessage: "" },
-					};
-				}
-
-				const flushParallelUpdate = () => {
-					onUpdate?.({
-						content: [{ type: "text", text: `Running ${taskList.length} tasks...` }],
-						details: {
-							mode: "parallel" as const,
-							results: [...allResults],
-						},
-					});
-				};
-				const fireParallelUpdate = throttle(flushParallelUpdate, 150);
-
-				const results = await mapConcurrent(taskList, maxConcurrency, async (t, idx) => {
-					const agent = agents.find((a) => a.name === t.agent)!;
-					const result = await runSubagent(agent, t.task, t.cwd ?? cwd, resolvedModel, signal, (progress) => {
-						allResults[idx].progress = progress;
-						fireParallelUpdate();
-					});
-
-					// Update allResults with the completed result so the UI reflects it immediately
-					allResults[idx] = result;
-					flushParallelUpdate();
-
-					return result;
+				entries = params.tasks.map((t) => {
+					const agent = agents.find((a) => a.name === t.agent);
+					if (!agent) throw new Error(`Unknown agent: ${t.agent}. Available agents: ${available}`);
+					return { agent, task: t.task, cwd: t.cwd ?? cwd };
 				});
-
-				// Build final output text
-				const outputParts = results.map((r) => {
-					const header = `## ${r.agent}${r.exitCode !== 0 ? " (FAILED)" : ""}`;
-					return `${header}\n\n${r.output || "(no output)"}`;
-				});
-
-				return {
-					content: [{ type: "text", text: outputParts.join("\n\n---\n\n") }],
-					details: { mode: "parallel" as const, results },
-				};
 			} else if (params.agent && params.task) {
-				// ── Single mode ──
 				const agent = agents.find((a) => a.name === params.agent);
-				if (!agent) {
-					const available = agents.map((a) => a.name).join(", ") || "none";
-					throw new Error(`Unknown agent: ${params.agent}. Available agents: ${available}`);
-				}
-
-				const liveResult: AgentResult = {
-					agent: params.agent!,
-					task: params.task!,
-					output: "",
-					exitCode: -1,
-					model: resolvedModel,
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-					progress: { agent: params.agent!, status: "running" as const, task: params.task!, recentTools: [], toolCount: 0, tokens: 0, durationMs: 0, lastMessage: "" },
-				};
-				let lastUpdate = 0;
-				const result = await runSubagent(agent, params.task, params.cwd ?? cwd, resolvedModel, signal, (progress) => {
-					liveResult.progress = progress;
-					const now = Date.now();
-					if (now - lastUpdate > 150) {
-						lastUpdate = now;
-						onUpdate?.({
-							content: [{ type: "text", text: "(running...)" }],
-							details: { mode: "single" as const, results: [liveResult] },
-						});
-					}
-				});
-				// Ensure final progress is flushed
-				onUpdate?.({
-					content: [{ type: "text", text: "(running...)" }],
-					details: { mode: "single" as const, results: [liveResult] },
-				});
-
-				const isError = result.exitCode !== 0 || !!result.progress.error;
-				return {
-					content: [{ type: "text", text: result.output || "(no output)" }],
-					details: { mode: "single" as const, results: [result] },
-					...(isError ? { isError: true } : {}),
-				};
+				if (!agent) throw new Error(`Unknown agent: ${params.agent}. Available agents: ${available}`);
+				entries = [{ agent, task: params.task, cwd: params.cwd ?? cwd }];
 			} else {
 				throw new Error("Provide either (agent + task) for single mode, or tasks[] for parallel mode.");
 			}
-			} finally {
-				(globalThis as any).__pi_subagent_running_count = Math.max(0, ((globalThis as any).__pi_subagent_running_count ?? 1) - 1);
-			}
+
+			// Launch detached; return immediately. Completion is delivered as a
+			// follow-up user message (the "ping") from launchBatch → sendBatchPing.
+			const launched = launchBatch(entries, resolvedModel, ctx.hasUI, ctx);
+			const ids = launched.map((j) => `#${j.id}`).join(", ");
+			const ack =
+				launched.length === 1
+					? `Started background subagent job ${ids} (${launched[0].agent}). It runs in the background — you will receive a follow-up message with its full output when it finishes. Do not wait or poll; continue with other work. Use /jobs to check status.`
+					: `Started ${launched.length} background subagent jobs (${ids}). They run in the background — you will receive a follow-up message with their full output once all finish. Do not wait or poll; continue with other work. Use /jobs to check status.`;
+
+			return { content: [{ type: "text", text: ack }] };
 		},
 
 		renderShell: "self",
@@ -1176,7 +1318,7 @@ export default function (pi: ExtensionAPI) {
 		return {
 			systemPrompt:
 				_event.systemPrompt +
-				`\n\n## Available Subagents\nUse the \`subagent\` tool to delegate tasks to these specialized agents:\n${list}\n\nSubagents run with the model set via the \`/sub\` command (current: ${subagentModel}). Agents cannot specify their own model.\n\nIMPORTANT: For multiple independent tasks, always use a SINGLE subagent call with tasks:[] (parallel mode), never multiple separate subagent calls.`,
+				`\n\n## Available Subagents\nUse the \`subagent\` tool to delegate tasks to these specialized agents:\n${list}\n\nSubagents run with the model set via the \`/sub\` command (current: ${subagentModel}). Agents cannot specify their own model.\n\nIMPORTANT: Subagents run in the BACKGROUND. The \`subagent\` tool returns a job id immediately and you receive the full output later as a follow-up message when the job finishes — do NOT wait or poll, just continue with other work. Check status any time with \`/jobs\`.\n\nFor multiple independent tasks, always use a SINGLE subagent call with tasks:[] (parallel mode), never multiple separate subagent calls; a parallel batch sends one consolidated follow-up message when all jobs finish.`,
 		};
 	});
 }

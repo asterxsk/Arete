@@ -180,8 +180,23 @@ export default function init(pi: ExtensionAPI) {
 		renderCall() {
 			return { render: () => [], invalidate: () => {}, handleInput: () => {} };
 		},
-		renderResult(result, opts) {
-			return { render: () => [], invalidate: () => {}, handleInput: () => {} };
+		renderResult(result: any, opts: any, theme: any) {
+			const text = result.content?.[0]?.text || '';
+			const isEntering = text.includes('PLAN MODE ACTIVATED');
+			const bullet = '\u25cf ';
+			const lines: string[] = [];
+			if (isEntering) {
+				lines.push('  ' + bullet + 'Entered plan mode');
+				lines.push('  Pi is now exploring and designing an implementation approach.');
+			} else {
+				lines.push('  ' + bullet + 'Exited plan mode');
+				lines.push('  You may now implement the plan.');
+			}
+			return {
+				render: (width: number) => lines.map(l => truncateToWidth(l, width)),
+				invalidate: () => {},
+				handleInput: () => {}
+			};
 		}
 	};
 	if ((globalThis as any).__pi_patchTool) (globalThis as any).__pi_patchTool(planTool);

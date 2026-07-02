@@ -33,6 +33,7 @@ export class TodoOverlay {
 	private completedTaskIdsPendingHide = new Set<number>();
 	private hiddenCompletedTaskIds = new Set<number>();
 	private lastNextId: number | undefined;
+	private agentTurnActive = false;
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -44,17 +45,32 @@ export class TodoOverlay {
 		}
 	}
 
+	/** Mark agent turn as active — widget will be visible when todos exist. */
+	onAgentTurnStart(): void {
+		this.agentTurnActive = true;
+		this.update();
+	}
+
+	/** Mark agent turn as ended — hide the widget immediately. */
+	onAgentTurnEnd(): void {
+		this.agentTurnActive = false;
+		this.hideWidget();
+	}
+
 	update(): void {
 		if (!this.uiCtx) return;
+
+		// Widget only visible during active agent turns
+		if (!this.agentTurnActive) {
+			this.hideWidget();
+			return;
+		}
+
 		const snapshot = this.getSnapshot();
 		const visible = this.selectOverlayTasks(snapshot);
 
 		if (visible.length === 0) {
-			if (this.widgetRegistered) {
-				this.uiCtx.setWidget(WIDGET_KEY, undefined);
-				this.widgetRegistered = false;
-				this.tui = undefined;
-			}
+			this.hideWidget();
 			return;
 		}
 
@@ -76,6 +92,15 @@ export class TodoOverlay {
 			this.widgetRegistered = true;
 		} else {
 			this.tui?.requestRender();
+		}
+	}
+
+	/** Hide the widget if currently registered. */
+	private hideWidget(): void {
+		if (this.widgetRegistered && this.uiCtx) {
+			this.uiCtx.setWidget(WIDGET_KEY, undefined);
+			this.widgetRegistered = false;
+			this.tui = undefined;
 		}
 	}
 
@@ -176,6 +201,7 @@ export class TodoOverlay {
 		this.widgetRegistered = false;
 		this.tui = undefined;
 		this.uiCtx = undefined;
+		this.agentTurnActive = false;
 		this.resetCompletedDisplayState();
 	}
 }

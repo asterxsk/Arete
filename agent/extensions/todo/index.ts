@@ -108,5 +108,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_start", async () => {
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
+		todoOverlay?.onAgentTurnStart();
+	});
+
+	pi.on("agent_end", async () => {
+		todoOverlay?.onAgentTurnEnd();
 	});
 }
