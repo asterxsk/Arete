@@ -49,7 +49,8 @@ export default function init(pi: ExtensionAPI) {
 				
 				const fs = await import('fs');
 				const path = await import('path');
-				const extsDir = 'C:/Users/prithish/.pi/agent/extensions';
+				const { fileURLToPath } = await import('node:url');
+				const extsDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 				
 				try {
 					const dirs = fs.readdirSync(extsDir).filter(e => fs.statSync(path.join(extsDir, e)).isDirectory());
